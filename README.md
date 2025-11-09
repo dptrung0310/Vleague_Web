@@ -1,6 +1,6 @@
 # ⚽ Vleague_Web
 
-**Vleague_Web** là dự án thu thập, quản lý và phân tích dữ liệu các mùa giải **V-League** (từ mùa 2022 đến 2024/25), bao gồm cầu thủ, đội bóng, trọng tài, sân vận động và kết quả thi đấu.
+**Vleague_Web** là dự án thu thập, quản lý và phân tích dữ liệu các mùa giải **V-League**, bao gồm cầu thủ, đội bóng, trọng tài, sân vận động và kết quả thi đấu.
 
 ---
 
