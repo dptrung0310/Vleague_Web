@@ -8,7 +8,10 @@ class User(db.Model):
     user_id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True, nullable=False)
     email = db.Column(db.String(100), unique=True, nullable=False)
-    password_hash = db.Column(db.String(255), nullable=False)
+    password_hash = db.Column(db.String(255), nullable=True)
+
+    google_id = db.Column(db.String(100), unique=True, nullable=True)
+
     role = db.Column(db.String(20), default='user') # 'admin', 'editor', 'user'
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -18,6 +21,7 @@ class User(db.Model):
             'username': self.username,
             'email': self.email,
             'role': self.role,
+            'has_password': self.password_hash is not None,
             'created_at': self.created_at.isoformat() if self.created_at else None
             # Không return password_hash để bảo mật
         }

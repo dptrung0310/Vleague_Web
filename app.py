@@ -2,7 +2,7 @@ from flask import Flask
 from flask_cors import CORS
 from flask_restx import Api
 
-from extensions import jwt, db, cache, bcrypt
+from extensions import jwt, db, cache, bcrypt, oauth
 from config import Config
 
 from routes.core_routes import init_league_routes, init_season_routes, init_referee_routes, init_stadium_routes
@@ -65,8 +65,17 @@ def create_app():
     # Khởi tạo Extensions
     db.init_app(app)
     jwt.init_app(app)
-    cache.init_app(app) # Bỏ comment nếu dùng cache
-    bcrypt.init_app(app) # Bỏ comment nếu dùng bcrypt
+    cache.init_app(app)
+    bcrypt.init_app(app)
+    oauth.init_app(app)
+
+    oauth.register(
+        name='google',
+        client_id=app.config['GOOGLE_CLIENT_ID'],
+        client_secret=app.config['GOOGLE_CLIENT_SECRET'],
+        server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+        client_kwargs={'scope': 'openid email profile'}
+    )
 
     # Khởi tạo Schemas (Models cho Swagger)
     schemas = init_schemas(api)

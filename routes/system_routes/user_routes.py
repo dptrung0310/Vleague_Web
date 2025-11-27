@@ -1,7 +1,7 @@
-from flask import request
-from flask_restx import Resource
+from flask import request, redirect, url_for
 from flask_jwt_extended import create_access_token, create_refresh_token, jwt_required, get_jwt_identity
-from extensions import cache
+from flask_restx import Resource
+from extensions import oauth
 from services.system_services.user_service import UserService
 
 
@@ -15,13 +15,13 @@ def init_user_routes(api, namespace, schemas):
     login_input = schemas['login_input']
     auth_response = schemas['auth_response']
 
-    @namespace.route('/register')
+    @namespace.route('')
     class UserRegister(Resource):
         @namespace.doc('register_user')
         @namespace.expect(register_model, validate=True)
         def post(self):
             """Đăng ký tài khoản mới"""
-            return user_service.create_user(request.json)
+            return user_service.create_user_form(request.json)
 
     @namespace.route('/login')
     class UserLogin(Resource):
@@ -31,23 +31,42 @@ def init_user_routes(api, namespace, schemas):
         def post(self):
             """Đăng nhập và lấy JWT Token"""
             data = request.json
-            result, status_code = user_service.login(data['username'], data['password'])
 
-            if status_code == 200:
-                user = result['user']
-                # Tạo JWT Token
-                # identity là user_id (int) hoặc chuỗi tùy quy ước
-                access_token = create_access_token(identity=user['user_id'], additional_claims={'role': user['role']})
-                refresh_token = create_refresh_token(identity=user['user_id'])
+            # Service đã trả về {message, access_token, refresh_token, user} rồi
+            result, status_code = user_service.login_form(data['username'], data['password'])
 
-                return {
-                    'message': 'Đăng nhập thành công',
-                    'access_token': access_token,
-                    'refresh_token': refresh_token,
-                    'user': user
-                }, 200
-
+            # Chỉ cần trả về kết quả từ service là xong
             return result, status_code
+
+    @namespace.route('/google')
+    class GoogleLogin(Resource):
+        def get(self):
+            """Redirect user sang trang Google"""
+            # Redirect URI phải trùng khớp setting trong Google Cloud Console
+            redirect_uri = url_for('Users_google_callback', _external=True)
+            return oauth.google.authorize_redirect(redirect_uri)
+
+    @namespace.route('/google/callback')
+    class GoogleCallback(Resource):
+        def get(self):
+            """Google gọi về đây kèm code"""
+            try:
+                token = oauth.google.authorize_access_token()
+                user_info = token.get('userinfo')
+
+                # Gọi service xử lý (Login hoặc Register ngầm)
+                result, _ = user_service.login_with_google(user_info)
+
+                # VÌ ĐÂY LÀ BROWSER REDIRECT, TA KHÔNG TRẢ JSON ĐƯỢC
+                # Phải redirect về Frontend kèm Token trên URL
+                frontend_url = "http://localhost:5173/auth/callback"
+                access_token = result['access_token']
+                refresh_token = result['refresh_token']
+
+                return redirect(f"{frontend_url}?access_token={access_token}&refresh_token={refresh_token}")
+
+            except Exception as e:
+                return {"message": "Lỗi xác thực Google", "error": str(e)}, 400
 
     @namespace.route('/profile')
     class UserProfile(Resource):
