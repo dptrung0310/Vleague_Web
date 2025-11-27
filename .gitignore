@@ -4,3 +4,4 @@ instance/
 .pytest_cache/
 .env
 venv/
+requirements.txt
