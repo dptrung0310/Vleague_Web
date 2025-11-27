@@ -1,0 +1,5 @@
+from .match_routes import init_match_routes
+from .match_event_routes import init_match_event_routes
+from .match_lineup_routes import init_match_lineup_routes
+from .match_referee_routes import init_match_referee_routes
+from .team_match_stat_routes import init_team_match_stat_routes
