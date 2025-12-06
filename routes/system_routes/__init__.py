@@ -1,2 +1,0 @@
-from .user_routes import init_user_routes
-from .article_routes import init_article_routes
