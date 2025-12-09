@@ -13,7 +13,7 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # JWT Configuration
-    JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'jwt-secret-key-for-football-app')
+    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY') or 'fallback-secret-key'
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(days=7)  # Token hết hạn sau 7 ngày
     JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=30)  # Refresh token hết hạn sau 30 ngày
     
@@ -22,6 +22,9 @@ class Config:
     
     # CORS
     CORS_ORIGINS = os.getenv('CORS_ORIGINS', '*')
+
+    UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static/uploads/avatars')
+    MAX_CONTENT_LENGTH = 2 * 1024 * 1024  # Giới hạn file tối đa 2MB
 
 class DevelopmentConfig(Config):
     DEBUG = True

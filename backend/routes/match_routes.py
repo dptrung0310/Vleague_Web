@@ -285,18 +285,14 @@ def get_match_details(match_id):
         match_data = MatchService.get_match_with_details(match_id)
         
         if match_data:
-            print(f"✅ API Success: Trả về dữ liệu cho match {match_id}")
             return jsonify({
                 'status': 'success',
                 'data': match_data
             }), 200
         else:
-            print(f"⚠️ API Warning: Không tìm thấy match {match_id}, thử lấy thông tin cơ bản")
-            
             # Thử lấy thông tin cơ bản của match
             match = Match.query.get(match_id)
             if match:
-                print(f"✅ API Fallback: Tìm thấy match cơ bản {match_id}")
                 # Tạo dữ liệu fallback từ thông tin cơ bản
                 fallback_data = {
                     'match_id': match.match_id,

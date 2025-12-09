@@ -56,7 +56,7 @@ def create_app():
     app.register_blueprint(match_bp, url_prefix='/api')
     app.register_blueprint(team_roster_bp, url_prefix='/api')      
     app.register_blueprint(season_standing_bp, url_prefix='/api')
-    app.register_blueprint(user_bp, url_prefix='/api')
+    app.register_blueprint(user_bp, url_prefix='/api/auth')
     app.register_blueprint(prediction_bp, url_prefix='/api')
     app.register_blueprint(post_bp, url_prefix='/api')
     app.register_blueprint(like_bp, url_prefix='/api')

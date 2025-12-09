@@ -16,6 +16,7 @@ class User(db.Model):
     total_predictions = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    google_id = db.Column(db.String(100), unique=True, nullable=True) # Thêm dòng này
     
     # Relationships
     predictions = db.relationship('Prediction', backref='user', lazy='dynamic', cascade='all, delete-orphan')

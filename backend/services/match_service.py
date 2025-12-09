@@ -104,17 +104,10 @@ class MatchService:
     @staticmethod
     def get_match_with_details(match_id):
         try:
-            print(f"🔍 DEBUG: Đang tìm match với ID: {match_id}")
-            
-            # Cách 1: Dùng ORM để kiểm tra
             match = Match.query.get(match_id)
             if not match:
                 print(f"❌ DEBUG: Match {match_id} không tồn tại trong bảng Matches")
                 return None
-            
-            print(f"✅ DEBUG: Đã tìm thấy match {match_id}")
-            print(f"   Home Team ID: {match.home_team_id}")
-            print(f"   Away Team ID: {match.away_team_id}")
             
             # Sử dụng SQL query đơn giản hơn để debug
             from sqlalchemy import text
@@ -145,7 +138,6 @@ class MatchService:
                 print(f"❌ DEBUG: Query cơ bản không trả về kết quả cho match {match_id}")
                 return None
             
-            print(f"✅ DEBUG: Query cơ bản thành công")
             match_data = dict(result._mapping)
             
             # Lấy events
@@ -153,7 +145,6 @@ class MatchService:
                 SELECT COUNT(*) as count FROM MatchEvents WHERE match_id = :match_id
             ''')
             events_count = db.session.execute(events_query, {'match_id': match_id}).fetchone()[0]
-            print(f"📊 DEBUG: Số sự kiện: {events_count}")
             
             events_query = text('''
                 SELECT 
@@ -174,7 +165,6 @@ class MatchService:
                 SELECT COUNT(*) as count FROM MatchLineups WHERE match_id = :match_id
             ''')
             lineups_count = db.session.execute(lineups_query, {'match_id': match_id}).fetchone()[0]
-            print(f"📊 DEBUG: Số cầu thủ trong đội hình: {lineups_count}")
             
             lineups_query = text('''
                 SELECT 
@@ -195,7 +185,6 @@ class MatchService:
                 SELECT COUNT(*) as count FROM Match_Referees WHERE match_id = :match_id
             ''')
             referees_count = db.session.execute(referees_query, {'match_id': match_id}).fetchone()[0]
-            print(f"📊 DEBUG: Số trọng tài: {referees_count}")
             
             referees_query = text('''
                 SELECT 
@@ -208,7 +197,6 @@ class MatchService:
             referees = db.session.execute(referees_query, {'match_id': match_id}).fetchall()
             match_data['referees'] = [dict(referee._mapping) for referee in referees]
             
-            print(f"✅ DEBUG: Đã lấy đầy đủ dữ liệu cho match {match_id}")
             return match_data
             
         except Exception as e:
