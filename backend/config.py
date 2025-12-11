@@ -23,7 +23,8 @@ class Config:
     # CORS
     CORS_ORIGINS = os.getenv('CORS_ORIGINS', '*')
 
-    UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static/uploads/avatars')
+    UPLOAD_FOLDER_AVATARS = os.path.join(BASE_DIR, 'static/uploads/avatars')
+    UPLOAD_FOLDER_POSTS = os.path.join(BASE_DIR, 'static/uploads/posts')
     MAX_CONTENT_LENGTH = 2 * 1024 * 1024  # Giới hạn file tối đa 2MB
 
 class DevelopmentConfig(Config):

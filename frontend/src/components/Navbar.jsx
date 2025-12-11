@@ -54,7 +54,10 @@ const Navbar = () => {
           <Link to="/" className="text-gray-700 hover:text-blue-600 transition">
             Dự đoán
           </Link>
-          <Link to="/" className="text-gray-700 hover:text-blue-600 transition">
+          <Link
+            to="/feed"
+            className="text-gray-700 hover:text-blue-600 transition font-semibold"
+          >
             Bảng tin
           </Link>
         </div>
@@ -63,19 +66,24 @@ const Navbar = () => {
         <div>
           {user ? (
             <div className="flex items-center gap-3">
-              <span className="font-semibold text-gray-700 hidden md:block">
-                {user.full_name || user.username}
-              </span>
+              {/* Bọc tên và avatar trong Link trỏ về /profile */}
+              <Link
+                to="/profile"
+                className="flex items-center gap-2 group cursor-pointer"
+              >
+                <span className="font-semibold text-gray-700 hidden md:block group-hover:text-blue-600 transition">
+                  {user.full_name || user.username}
+                </span>
 
-              {/* Component Avatar tự xử lý ảnh Google hay ảnh Upload */}
-              <Avatar
-                src={user.avatar_url}
-                className="w-9 h-9 rounded-full border border-blue-200"
-              />
+                {/* Component Avatar */}
+                <div className="group-hover:ring-2 ring-blue-500 rounded-full transition">
+                  {user && <Avatar user={user} />}
+                </div>
+              </Link>
 
               <button
                 onClick={handleLogout}
-                className="text-sm font-medium text-red-500 hover:text-red-700 ml-2"
+                className="text-sm font-medium text-red-500 hover:text-red-700 ml-2 border-l pl-3 border-gray-300"
               >
                 Đăng xuất
               </button>

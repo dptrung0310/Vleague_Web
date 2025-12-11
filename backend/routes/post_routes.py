@@ -2,165 +2,86 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from services.post_service import PostService
-from extensions import db
-from models import Post, User
 
-post_bp = Blueprint('post', __name__)
+post_bp = Blueprint('post_bp', __name__)
 
-# routes/post_routes.py
-from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required, get_jwt_identity
-from services.post_service import PostService
-
-post_bp = Blueprint('post', __name__)
-
-@post_bp.route('/posts', methods=['GET'])
-def get_all_posts():
-    """Lấy tất cả bài viết"""
-    try:
-        include_counts = request.args.get('include_counts', 'false').lower() == 'true'
-        limit = request.args.get('limit', type=int)
-        offset = request.args.get('offset', 0, type=int)
-        
-        # Có thể thêm pagination vào service
-        posts = PostService.get_all_posts(include_counts=include_counts)
-        
-        if limit:
-            posts = posts[offset:offset + limit]
-        
-        return jsonify({
-            'success': True,
-            'data': posts,
-            'count': len(posts),
-            'limit': limit,
-            'offset': offset
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@post_bp.route('/posts/<int:post_id>', methods=['GET'])
-def get_post(post_id):
-    """Lấy bài viết theo ID"""
-    try:
-        include_counts = request.args.get('include_counts', 'false').lower() == 'true'
-        post = PostService.get_post_by_id(post_id, include_counts=include_counts)
-        
-        if not post:
-            return jsonify({'success': False, 'error': 'Post not found'}), 404
-        
-        return jsonify({'success': True, 'data': post})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@post_bp.route('/posts', methods=['POST'])
+# 1. Tạo Post (dùng Form-Data vì có ảnh)
+@post_bp.route('', methods=['POST'])
 @jwt_required()
 def create_post():
-    """Tạo bài viết mới"""
-    try:
-        current_user_id = get_jwt_identity()
-        data = request.get_json()
-        
-        if not data:
-            return jsonify({'success': False, 'error': 'No data provided'}), 400
-        
-        # Thêm user_id từ JWT
-        data['user_id'] = current_user_id
-        
-        post, error = PostService.create_post(data)
-        
-        if error:
-            return jsonify({'success': False, 'error': error}), 400
-        
-        return jsonify({'success': True, 'data': post}), 201
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+    user_id = get_jwt_identity()
+    # request.form chứa text (title, content, match_id...)
+    # request.files chứa file (image)
+    result, error = PostService.create_post(user_id, request.form, request.files.get('image'))
+    
+    if error:
+        return jsonify({"status": "error", "message": error}), 400
+    return jsonify({"status": "success", "data": result}), 201
 
-@post_bp.route('/posts/<int:post_id>', methods=['PUT'])
+# 2. Lấy Newsfeed (Phân trang)
+@post_bp.route('', methods=['GET'])
+@jwt_required(optional=True) # Optional: để khách vãng lai cũng xem được
+def get_posts():
+    current_user_id = get_jwt_identity()
+    page = request.args.get('page', 1, type=int)
+    limit = request.args.get('limit', 10, type=int)
+    
+    # Lấy thêm tham số search
+    search = request.args.get('search', '', type=str)
+
+    result, error = PostService.get_all_posts(page, limit, current_user_id, search_query=search)
+    
+    if error:
+        return jsonify({"status": "error", "message": error}), 400
+    return jsonify({"status": "success", "data": result}), 200
+
+# 3. Chi tiết bài viết
+@post_bp.route('/<int:post_id>', methods=['GET'])
+@jwt_required(optional=True)
+def get_post_detail(post_id):
+    current_user_id = get_jwt_identity()
+    result, error = PostService.get_post_detail(post_id, current_user_id)
+    
+    if error:
+        return jsonify({"status": "error", "message": error}), 404
+    return jsonify({"status": "success", "data": result}), 200
+
+# 4. Like / Unlike
+@post_bp.route('/<int:post_id>/like', methods=['POST'])
 @jwt_required()
-def update_post(post_id):
-    """Cập nhật bài viết"""
-    try:
-        current_user_id = get_jwt_identity()
-        data = request.get_json()
-        
-        if not data:
-            return jsonify({'error': 'No data provided'}), 400
-        
-        # Kiểm tra quyền sở hữu
-        post = PostService.get_post_by_id(post_id)
-        if not post:
-            return jsonify({'error': 'Post not found'}), 404
-        
-        if post['user_id'] != current_user_id:
-            return jsonify({'error': 'Unauthorized'}), 403
-        
-        post, error = PostService.update_post(post_id, data)
-        if error:
-            return jsonify({'error': error}), 400
-        return jsonify(post)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+def like_post(post_id):
+    user_id = get_jwt_identity()
+    action, error = PostService.toggle_like(user_id, post_id)
+    
+    if error:
+        return jsonify({"status": "error", "message": error}), 400
+    return jsonify({"status": "success", "message": action}), 200
 
-@post_bp.route('/posts/<int:post_id>', methods=['DELETE'])
+# 5. Comment
+@post_bp.route('/<int:post_id>/comment', methods=['POST'])
+@jwt_required()
+def comment_post(post_id):
+    user_id = get_jwt_identity()
+    data = request.get_json()
+    
+    result, error = PostService.add_comment(user_id, post_id, data.get('content'))
+    
+    if error:
+        return jsonify({"status": "error", "message": error}), 400
+    return jsonify({"status": "success", "data": result}), 201
+
+# 6. Xóa bài viết
+@post_bp.route('/<int:post_id>', methods=['DELETE'])
 @jwt_required()
 def delete_post(post_id):
-    """Xóa bài viết"""
-    try:
-        current_user_id = get_jwt_identity()
+    user_id = get_jwt_identity()
+    
+    msg, error = PostService.delete_post(user_id, post_id)
+    
+    if error:
+        # Trả về 403 Forbidden nếu không có quyền, hoặc 404/400 tùy lỗi
+        if "quyền" in error:
+            return jsonify({"status": "error", "message": error}), 403
+        return jsonify({"status": "error", "message": error}), 400
         
-        # Kiểm tra quyền sở hữu
-        post = PostService.get_post_by_id(post_id)
-        if not post:
-            return jsonify({'error': 'Post not found'}), 404
-        
-        if post['user_id'] != current_user_id:
-            return jsonify({'error': 'Unauthorized'}), 403
-        
-        success, error = PostService.delete_post(post_id)
-        if not success:
-            return jsonify({'error': error}), 404
-        return jsonify({'message': 'Post deleted successfully'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@post_bp.route('/posts/user/<int:user_id>', methods=['GET'])
-def get_posts_by_user(user_id):
-    """Lấy bài viết theo người dùng"""
-    try:
-        include_counts = request.args.get('include_counts', 'false').lower() == 'true'
-        posts = PostService.get_posts_by_user(user_id, include_counts=include_counts)
-        return jsonify(posts)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@post_bp.route('/posts/match/<int:match_id>', methods=['GET'])
-def get_posts_by_match(match_id):
-    """Lấy bài viết theo trận đấu"""
-    try:
-        posts = PostService.get_posts_by_match(match_id)
-        return jsonify(posts)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@post_bp.route('/posts/search', methods=['GET'])
-def search_posts():
-    """Tìm kiếm bài viết"""
-    try:
-        keyword = request.args.get('keyword', '')
-        if not keyword:
-            return jsonify({'error': 'Keyword is required'}), 400
-        
-        posts = PostService.search_posts(keyword)
-        return jsonify(posts)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@post_bp.route('/posts/trending', methods=['GET'])
-def get_trending_posts():
-    """Lấy bài viết trending"""
-    try:
-        limit = request.args.get('limit', 10, type=int)
-        posts = PostService.get_trending_posts(limit=limit)
-        return jsonify(posts)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    return jsonify({"status": "success", "message": msg}), 200

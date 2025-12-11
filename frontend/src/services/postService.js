@@ -1,103 +1,72 @@
-// src/services/postService.js
 import axiosClient from "../api/axiosClient";
 
+// --- 1. THÊM HÀM NÀY ĐỂ LẤY TOKEN TỪ LOCALSTORAGE ---
+const authHeader = () => {
+  const token = localStorage.getItem("token"); // Lấy token đã lưu khi login
+  if (token) {
+    // Trả về header Authorization chuẩn JWT
+    return { Authorization: `Bearer ${token}` };
+  }
+  return {};
+};
+
 const postService = {
-  // Lấy tất cả bài viết
-  getAllPosts: async (params = {}) => {
-    try {
-      const response = await axiosClient.get("/posts", { params });
-      return response;
-    } catch (error) {
-      throw error;
-    }
+  // 1. Lấy danh sách bài viết (Đã thêm tham số search)
+  getPosts: (page = 1, limit = 10, search = "") => {
+    return axiosClient.get("/posts", {
+      params: {
+        page,
+        limit,
+        search, // Truyền từ khóa tìm kiếm lên server
+      },
+      headers: authHeader(), // Gọi hàm authHeader vừa khai báo ở trên
+    });
   },
 
-  // Lấy bài viết theo ID
-  getPostById: async (postId) => {
-    try {
-      const response = await axiosClient.get(`/posts/${postId}`, {
-        params: { include_counts: true },
-      });
-      return response;
-    } catch (error) {
-      throw error;
-    }
+  // 2. Tạo bài viết mới
+  createPost: (data) => {
+    return axiosClient.post("/posts", data, {
+      headers: {
+        ...authHeader(), // Kế thừa header xác thực
+        "Content-Type": "multipart/form-data",
+      },
+    });
   },
 
-  // Tạo bài viết mới
-  createPost: async (postData) => {
-    try {
-      const response = await axiosClient.post("/posts", postData);
-      return response;
-    } catch (error) {
-      throw error;
-    }
+  // 3. Xóa bài viết
+  deletePost: (postId) => {
+    return axiosClient.delete(`/posts/${postId}`, {
+      headers: authHeader(),
+    });
   },
 
-  // Cập nhật bài viết
-  updatePost: async (postId, postData) => {
-    try {
-      const response = await axiosClient.put(`/posts/${postId}`, postData);
-      return response;
-    } catch (error) {
-      throw error;
-    }
+  // 4. Like / Unlike
+  toggleLike: (postId) => {
+    return axiosClient.post(
+      `/posts/${postId}/like`,
+      {},
+      {
+        headers: authHeader(),
+      }
+    );
   },
 
-  // Xóa bài viết
-  deletePost: async (postId) => {
-    try {
-      const response = await axiosClient.delete(`/posts/${postId}`);
-      return response;
-    } catch (error) {
-      throw error;
-    }
+  // 5. Bình luận
+  addComment: (postId, content) => {
+    return axiosClient.post(
+      `/posts/${postId}/comment`,
+      { content },
+      {
+        headers: authHeader(),
+      }
+    );
   },
 
-  // Lấy bài viết theo user
-  getPostsByUser: async (userId, include_counts = true) => {
-    try {
-      const response = await axiosClient.get(`/posts/user/${userId}`, {
-        params: { include_counts },
-      });
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  },
-
-  // Lấy bài viết theo trận đấu
-  getPostsByMatch: async (matchId) => {
-    try {
-      const response = await axiosClient.get(`/posts/match/${matchId}`);
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  },
-
-  // Tìm kiếm bài viết
-  searchPosts: async (keyword) => {
-    try {
-      const response = await axiosClient.get("/posts/search", {
-        params: { keyword },
-      });
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  },
-
-  // Lấy bài viết trending
-  getTrendingPosts: async (limit = 10) => {
-    try {
-      const response = await axiosClient.get("/posts/trending", {
-        params: { limit },
-      });
-      return response;
-    } catch (error) {
-      throw error;
-    }
+  // 6. Chi tiết bài viết
+  getPostDetail: (postId) => {
+    return axiosClient.get(`/posts/${postId}`, {
+      headers: authHeader(), // Có thể cần auth để biết user đã like chưa
+    });
   },
 };
 

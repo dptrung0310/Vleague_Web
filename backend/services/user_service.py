@@ -34,7 +34,7 @@ class UserService:
             db.session.commit()
             
             # Tạo token ngay sau khi đăng ký thành công (để user tự login luôn)
-            access_token = create_access_token(identity=new_user.user_id)
+            access_token = create_access_token(identity=str(new_user.user_id))
             
             return {
                 "message": "Đăng ký thành công",
@@ -58,7 +58,7 @@ class UserService:
             user = User.query.filter_by(email=username).first()
 
         if user and user.check_password(password):
-            access_token = create_access_token(identity=user.user_id)
+            access_token = create_access_token(identity=str(user.user_id))
             return {
                 "message": "Đăng nhập thành công",
                 "access_token": access_token,
@@ -118,7 +118,7 @@ class UserService:
                 db.session.commit()
 
             # 4. Tạo JWT Token
-            access_token = create_access_token(identity=user.user_id)
+            access_token = create_access_token(identity=str(user.user_id))
             return {
                 "message": "Google login thành công",
                 "access_token": access_token,

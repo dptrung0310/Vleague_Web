@@ -9,11 +9,12 @@ import {
 import Home from "./pages/Home/Home";
 import Login from "./pages/Auth/Login";
 import Register from "./pages/Auth/Register";
-import GoogleCallback from "./pages/Auth/GoogleCallBack";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import Teams from "./pages/Team/Team";
 import Players from "./pages/Players/Players";
+import Profile from "./pages/Profile/Profile";
+import Feed from "./pages/Feed/Feed";
 
 function App() {
   return (
@@ -25,6 +26,8 @@ function App() {
         <Route path="/register" element={<Register />} />
         <Route path="/teams" element={<Teams />} />
         <Route path="/players" element={<Players />} />
+        <Route path="/profile" element={<Profile />} />
+        <Route path="/feed" element={<Feed />} />
       </Routes>
       <Footer />
     </div>

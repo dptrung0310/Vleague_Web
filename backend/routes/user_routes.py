@@ -97,11 +97,11 @@ def upload_avatar():
         new_filename = f"user_{current_user_id}.{file_ext}"
         
         # 3. Lưu file vào thư mục static/uploads/avatars
-        save_path = os.path.join(current_app.config['UPLOAD_FOLDER'], new_filename)
+        save_path = os.path.join(current_app.config['UPLOAD_FOLDER_AVATARS'], new_filename)
         
         # Tạo thư mục nếu chưa có
-        if not os.path.exists(current_app.config['UPLOAD_FOLDER']):
-            os.makedirs(current_app.config['UPLOAD_FOLDER'])
+        if not os.path.exists(current_app.config['UPLOAD_FOLDER_AVATARS']):
+            os.makedirs(current_app.config['UPLOAD_FOLDER_AVATARS'])
             
         file.save(save_path)
         
