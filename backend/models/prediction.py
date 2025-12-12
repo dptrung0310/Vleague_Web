@@ -12,8 +12,8 @@ class Prediction(db.Model):
     predicted_result = db.Column(db.String(10))  # 'HOME_WIN', 'DRAW', 'AWAY_WIN'
     
     # Giai đoạn 2: Dự đoán tỉ số
-    predicted_home_score = db.Column(db.Integer)
-    predicted_away_score = db.Column(db.Integer)
+    predicted_home_score = db.Column(db.Integer, nullable=True)  # Thêm nullable=True
+    predicted_away_score = db.Column(db.Integer, nullable=True)  # Thêm nullable=True
     
     # Điểm thưởng
     points_awarded = db.Column(db.Integer, default=0)
@@ -58,3 +58,15 @@ class Prediction(db.Model):
             }
         
         return result
+    def get_match_info(self):
+        """Lấy thông tin trận đấu liên quan"""
+        if self.match:
+            return {
+                'home_team': self.match.home_team.name if self.match.home_team else None,
+                'away_team': self.match.away_team.name if self.match.away_team else None,
+                'match_datetime': self.match.match_datetime.isoformat() if self.match.match_datetime else None,
+                'status': self.match.status,
+                'actual_home_score': self.match.home_score,
+                'actual_away_score': self.match.away_score
+            }
+        return None

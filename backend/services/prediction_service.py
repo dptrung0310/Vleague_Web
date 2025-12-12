@@ -1,411 +1,340 @@
-from extensions import db
-from sqlalchemy import text
 from datetime import datetime
+from models.prediction import Prediction
+from models.match import Match
+from models.user import User
+from extensions import db
+from sqlalchemy import desc, and_, or_
+from models.team import Team  # Thêm import này
+from models.stadium import Stadium  # Thêm import này
+from models.season import Season  # Thêm import này
 
 class PredictionService:
     @staticmethod
-    def get_all_predictions():
+    def create_prediction(user_id, match_id, data):
+        """
+        Tạo dự đoán mới cho người dùng
+        """
         try:
-            query = text('SELECT * FROM Predictions ORDER BY created_at DESC')
-            result = db.session.execute(query)
+            print(f"DEBUG: Creating prediction for user={user_id}, match={match_id}")
             
-            predictions = []
-            for row in result:
-                pred_dict = dict(row._mapping)
-                # Xử lý datetime
-                for field in ['created_at', 'updated_at']:
-                    if pred_dict.get(field):
-                        if isinstance(pred_dict[field], str):
-                            try:
-                                pred_dict[field] = datetime.strptime(pred_dict[field], '%Y-%m-%d %H:%M:%S').isoformat()
-                            except:
-                                pred_dict[field] = None
-                        elif hasattr(pred_dict[field], 'isoformat'):
-                            pred_dict[field] = pred_dict[field].isoformat()
-                predictions.append(pred_dict)
-            
-            return predictions
-        except Exception as e:
-            print(f"ERROR in get_all_predictions: {str(e)}")
-            return []
-    
-    @staticmethod
-    def get_prediction_by_id(prediction_id):
-        try:
-            query = text('SELECT * FROM Predictions WHERE prediction_id = :id')
-            result = db.session.execute(query, {'id': prediction_id}).fetchone()
-            
-            if result:
-                pred_dict = dict(result._mapping)
-                for field in ['created_at', 'updated_at']:
-                    if pred_dict.get(field):
-                        if isinstance(pred_dict[field], str):
-                            try:
-                                pred_dict[field] = datetime.strptime(pred_dict[field], '%Y-%m-%d %H:%M:%S').isoformat()
-                            except:
-                                pred_dict[field] = None
-                        elif hasattr(pred_dict[field], 'isoformat'):
-                            pred_dict[field] = pred_dict[field].isoformat()
-                return pred_dict
-            return None
-        except Exception as e:
-            print(f"ERROR in get_prediction_by_id: {str(e)}")
-            return None
-    
-    @staticmethod
-    def create_prediction(data):
-        try:
-            # Kiểm tra trận đấu có tồn tại và chưa diễn ra không
-            match_query = text('SELECT match_datetime, status FROM Matches WHERE match_id = :match_id')
-            match_result = db.session.execute(match_query, {'match_id': data['match_id']}).fetchone()
-            
-            if not match_result:
+            # Kiểm tra trận đấu có tồn tại
+            match = Match.query.get(match_id)
+            if not match:
+                print(f"DEBUG: Match {match_id} not found")
                 return None, "Match not found"
             
-            match_time = match_result[0]
-            match_status = match_result[1]
+            # Kiểm tra trận đấu đã diễn ra chưa (status phải là 'Chưa đá')
+            if match.status != 'Chưa đá':
+                print(f"DEBUG: Match {match_id} status is {match.status}, not 'Chưa đá'")
+                return None, "Cannot predict for finished or ongoing match"
             
-            # Kiểm tra trận đấu đã diễn ra chưa
-            if match_status != 'SCHEDULED':
-                return None, "Match has already started or finished"
+            # Kiểm tra người dùng đã dự đoán chưa
+            existing_prediction = Prediction.query.filter_by(
+                user_id=user_id, 
+                match_id=match_id
+            ).first()
             
-            if isinstance(match_time, str):
-                match_time = datetime.strptime(match_time, '%Y-%m-%d %H:%M:%S')
+            if existing_prediction:
+                print(f"DEBUG: User {user_id} already predicted match {match_id}")
+                return None, "Already predicted this match"
             
-            if datetime.utcnow() >= match_time:
-                return None, "Match has already started"
+            # Tạo dự đoán mới
+            prediction = Prediction(
+                user_id=user_id,
+                match_id=match_id,
+                predicted_result=data.get('predicted_result'),
+                predicted_home_score=data.get('predicted_home_score'),
+                predicted_away_score=data.get('predicted_away_score'),
+                status='PENDING'
+            )
             
-            # Kiểm tra user đã dự đoán trận này chưa
-            existing_query = text('''
-                SELECT prediction_id FROM Predictions 
-                WHERE user_id = :user_id AND match_id = :match_id
-            ''')
-            existing = db.session.execute(existing_query, {
-                'user_id': data['user_id'],
-                'match_id': data['match_id']
-            }).fetchone()
-            
-            if existing:
-                return None, "User has already predicted this match"
-            
-            # Nếu có predicted_home_score và predicted_away_score, tính predicted_result
-            if 'predicted_home_score' in data and 'predicted_away_score' in data:
-                home_score = data['predicted_home_score']
-                away_score = data['predicted_away_score']
-                
-                if home_score > away_score:
-                    data['predicted_result'] = 'HOME_WIN'
-                elif home_score < away_score:
-                    data['predicted_result'] = 'AWAY_WIN'
-                else:
-                    data['predicted_result'] = 'DRAW'
-            
-            columns = []
-            values = []
-            params = {}
-            
-            for key, value in data.items():
-                columns.append(key)
-                values.append(f":{key}")
-                params[key] = value
-            
-            query = text(f'''
-                INSERT INTO Predictions ({', '.join(columns)})
-                VALUES ({', '.join(values)})
-            ''')
-            
-            db.session.execute(query, params)
+            db.session.add(prediction)
             db.session.commit()
             
-            # Lấy ID vừa tạo
-            last_id = db.session.execute(text('SELECT last_insert_rowid()')).fetchone()[0]
+            print(f"DEBUG: Prediction created successfully with ID {prediction.prediction_id}")
+            return prediction, None
             
-            return PredictionService.get_prediction_by_id(last_id), None
         except Exception as e:
-            print(f"ERROR in create_prediction: {str(e)}")
             db.session.rollback()
+            print(f"DEBUG: Error creating prediction: {str(e)}")
             return None, str(e)
-    
+        
     @staticmethod
-    def update_prediction(prediction_id, data):
+    def update_prediction(prediction_id, user_id, data):
+        """
+        Cập nhật dự đoán (chỉ khi trận chưa bắt đầu)
+        """
         try:
-            existing = PredictionService.get_prediction_by_id(prediction_id)
-            if not existing:
+            print(f"DEBUG: Updating prediction {prediction_id}")
+            print(f"DEBUG: Data received: {data}")
+            
+            prediction = Prediction.query.get(prediction_id)
+            if not prediction:
                 return None, "Prediction not found"
             
-            # Kiểm tra trận đấu đã diễn ra chưa
-            match_query = text('SELECT match_datetime FROM Matches WHERE match_id = :match_id')
-            match_result = db.session.execute(match_query, {'match_id': existing['match_id']}).fetchone()
+            # Kiểm tra quyền sở hữu
+            if prediction.user_id != int(user_id):
+                return None, "Unauthorized"
             
-            if match_result:
-                match_time = match_result[0]
-                if isinstance(match_time, str):
-                    match_time = datetime.strptime(match_time, '%Y-%m-%d %H:%M:%S')
-                
-                if datetime.utcnow() >= match_time:
-                    return None, "Cannot update prediction after match has started"
+            # Kiểm tra trận đấu
+            match = Match.query.get(prediction.match_id)
+            if match.status != 'Chưa đá':
+                return None, "Cannot update prediction for finished match"
             
-            # Nếu đã có kết quả (status khác PENDING) thì không cho sửa
-            if existing['status'] != 'PENDING':
-                return None, "Cannot update prediction after match has been processed"
+            # Cập nhật kết quả
+            if 'predicted_result' in data:
+                prediction.predicted_result = data['predicted_result']
             
-            # Tính lại predicted_result nếu có thay đổi tỉ số
-            if 'predicted_home_score' in data or 'predicted_away_score' in data:
-                home_score = data.get('predicted_home_score', existing['predicted_home_score'])
-                away_score = data.get('predicted_away_score', existing['predicted_away_score'])
-                
-                if home_score > away_score:
-                    data['predicted_result'] = 'HOME_WIN'
-                elif home_score < away_score:
-                    data['predicted_result'] = 'AWAY_WIN'
-                else:
-                    data['predicted_result'] = 'DRAW'
+            # QUAN TRỌNG: Cập nhật tỉ số, cho phép None
+            if 'predicted_home_score' in data:
+                # Nhận None từ frontend nếu là dự đoán kết quả
+                prediction.predicted_home_score = data['predicted_home_score']
             
-            set_clause = ', '.join([f"{key} = :{key}" for key in data.keys()])
-            query = text(f'''
-                UPDATE Predictions 
-                SET {set_clause}
-                WHERE prediction_id = :prediction_id
-            ''')
+            if 'predicted_away_score' in data:
+                prediction.predicted_away_score = data['predicted_away_score']
             
-            params = data.copy()
-            params['prediction_id'] = prediction_id
-            
-            db.session.execute(query, params)
+            prediction.updated_at = datetime.utcnow()
             db.session.commit()
             
-            return PredictionService.get_prediction_by_id(prediction_id), None
+            print(f"DEBUG: Updated prediction: {prediction.to_dict()}")
+            return prediction, None
+            
         except Exception as e:
-            print(f"ERROR in update_prediction: {str(e)}")
             db.session.rollback()
+            print(f"DEBUG: Error updating prediction: {str(e)}")
+            return None, str(e)
+        
+    @staticmethod
+    def delete_prediction(prediction_id, user_id):
+        """
+        Xóa dự đoán (chỉ khi trận chưa bắt đầu)
+        """
+        try:
+            print(f"DEBUG: Attempting to delete prediction {prediction_id} for user {user_id}")
+            print(f"DEBUG: User ID type: {type(user_id)}")
+            
+            prediction = Prediction.query.get(prediction_id)
+            if not prediction:
+                print(f"DEBUG: Prediction {prediction_id} not found")
+                return False, "Prediction not found"
+            
+            # KIỂM TRA QUYỀN SỞ HỮU - chuyển user_id về int để so sánh
+            # Vì JWT identity thường trả về string
+            try:
+                user_id_int = int(user_id)
+            except (ValueError, TypeError):
+                print(f"DEBUG: Invalid user_id format: {user_id}")
+                return False, "Invalid user ID format"
+            
+            print(f"DEBUG: Prediction user_id: {prediction.user_id} (type: {type(prediction.user_id)})")
+            print(f"DEBUG: Current user_id: {user_id_int} (type: {type(user_id_int)})")
+            
+            if prediction.user_id != user_id_int:
+                print(f"DEBUG: Unauthorized: {prediction.user_id} != {user_id_int}")
+                return False, "Unauthorized: You don't own this prediction"
+            
+            # Kiểm tra trận đấu đã bắt đầu chưa
+            match = Match.query.get(prediction.match_id)
+            if not match:
+                print(f"DEBUG: Match {prediction.match_id} not found")
+                return False, "Match not found"
+            
+            print(f"DEBUG: Match status: {match.status}")
+            if match.status != 'Chưa đá':
+                print(f"DEBUG: Cannot delete. Match status is: {match.status}")
+                return False, f"Cannot delete prediction for match that has already started or finished (Status: {match.status})"
+            
+            print(f"DEBUG: Deleting prediction {prediction_id}...")
+            db.session.delete(prediction)
+            db.session.commit()
+            
+            print(f"DEBUG: Prediction {prediction_id} deleted successfully")
+            return True, None
+            
+        except Exception as e:
+            db.session.rollback()
+            print(f"DEBUG: Error deleting prediction: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False, str(e)
+        
+    @staticmethod
+    def get_user_predictions(user_id, page=1, per_page=20):
+        """
+        Lấy tất cả dự đoán của người dùng
+        """
+        try:
+            pagination = Prediction.query.filter_by(
+                user_id=user_id
+            ).order_by(
+                desc(Prediction.created_at)
+            ).paginate(
+                page=page, 
+                per_page=per_page, 
+                error_out=False
+            )
+            
+            return pagination, None
+            
+        except Exception as e:
             return None, str(e)
     
     @staticmethod
-    def delete_prediction(prediction_id):
+    def get_match_predictions(match_id):
+        """
+        Lấy tất cả dự đoán cho một trận đấu
+        """
         try:
-            existing = PredictionService.get_prediction_by_id(prediction_id)
-            if not existing:
-                return False, "Prediction not found"
+            predictions = Prediction.query.filter_by(
+                match_id=match_id
+            ).order_by(
+                desc(Prediction.created_at)
+            ).all()
             
-            # Kiểm tra trận đấu đã diễn ra chưa
-            match_query = text('SELECT match_datetime FROM Matches WHERE match_id = :match_id')
-            match_result = db.session.execute(match_query, {'match_id': existing['match_id']}).fetchone()
+            return predictions, None
             
-            if match_result:
-                match_time = match_result[0]
-                if isinstance(match_time, str):
-                    match_time = datetime.strptime(match_time, '%Y-%m-%d %H:%M:%S')
+        except Exception as e:
+            return None, str(e)
+    
+    @staticmethod
+    def get_upcoming_matches_for_prediction(user_id=None):
+        """
+        Lấy danh sách TẤT CẢ trận sắp diễn ra để dự đoán
+        KHÔNG phân trang - load tất cả trận có status = 'Chưa đá' của mùa hiện tại
+        """
+        try:
+            print(f"DEBUG: Getting ALL upcoming matches for user_id={user_id}")
+            
+            # 1. Lấy season_id lớn nhất (mùa hiện tại)
+            current_season = Season.query.order_by(desc(Season.season_id)).first()
+            if not current_season:
+                return None, "Không tìm thấy mùa giải nào"
+            
+            current_season_id = current_season.season_id
+            print(f"DEBUG: Current season_id = {current_season_id}")
+            
+            # 2. Lấy TẤT CẢ trận có status là 'Chưa đá' trong mùa hiện tại
+            matches = Match.query.filter(
+                Match.season_id == current_season_id,
+                Match.status == 'Chưa đá'
+            ).order_by(Match.match_datetime.asc()).all()
+            
+            print(f"DEBUG: Found {len(matches)} matches with status 'Chưa đá' in season {current_season_id}")
+            
+            # 3. Chuẩn bị dữ liệu trả về
+            matches_data = []
+            
+            for match in matches:
+                # Lấy thông tin cơ bản của trận
+                match_dict = {
+                    'match_id': match.match_id,
+                    'season_id': match.season_id,
+                    'round': match.round,
+                    'match_datetime': match.match_datetime.isoformat() if match.match_datetime else None,
+                    'home_team_id': match.home_team_id,
+                    'away_team_id': match.away_team_id,
+                    'home_score': match.home_score,
+                    'away_score': match.away_score,
+                    'status': match.status,
+                    'stadium_id': match.stadium_id,
+                    'match_url': match.match_url,
+                    'season_name': match.season.name if match.season else None,
+                    'home_team_name': match.home_team.name if match.home_team else None,
+                    'away_team_name': match.away_team.name if match.away_team else None,
+                    'stadium_name': match.stadium.name if match.stadium else None,
+                }
                 
-                if datetime.utcnow() >= match_time:
-                    return False, "Cannot delete prediction after match has started"
+                # Thêm logo nếu có
+                if match.home_team and hasattr(match.home_team, 'logo_url'):
+                    match_dict['home_team_logo'] = match.home_team.logo_url
+                else:
+                    match_dict['home_team_logo'] = None
+                    
+                if match.away_team and hasattr(match.away_team, 'logo_url'):
+                    match_dict['away_team_logo'] = match.away_team.logo_url
+                else:
+                    match_dict['away_team_logo'] = None
+                
+                # Nếu có user_id, kiểm tra xem đã dự đoán chưa
+                if user_id:
+                    prediction = Prediction.query.filter_by(
+                        user_id=user_id,
+                        match_id=match.match_id
+                    ).first()
+                    
+                    if prediction:
+                        match_dict['prediction_id'] = prediction.prediction_id
+                        match_dict['predicted_result'] = prediction.predicted_result
+                        match_dict['predicted_home_score'] = prediction.predicted_home_score
+                        match_dict['predicted_away_score'] = prediction.predicted_away_score
+                        match_dict['prediction_status'] = prediction.status
+                
+                matches_data.append(match_dict)
             
-            query = text('DELETE FROM Predictions WHERE prediction_id = :prediction_id')
-            db.session.execute(query, {'prediction_id': prediction_id})
-            db.session.commit()
+            print(f"DEBUG: Returning {len(matches_data)} matches (ALL matches, no pagination)")
             
-            return True, None
+            return {
+                'matches': matches_data,
+                'total': len(matches_data)
+            }, None
+                
         except Exception as e:
-            print(f"ERROR in delete_prediction: {str(e)}")
-            db.session.rollback()
-            return False, str(e)
-    
+            print(f"DEBUG: Error in get_upcoming_matches_for_prediction: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return None, str(e)
+         
     @staticmethod
-    def get_predictions_by_user(user_id):
-        try:
-            query = text('''
-                SELECT p.*, m.home_team_id, m.away_team_id, m.match_datetime,
-                       m.home_score, m.away_score, m.status as match_status,
-                       ht.name as home_team_name, at.name as away_team_name
-                FROM Predictions p
-                LEFT JOIN Matches m ON p.match_id = m.match_id
-                LEFT JOIN Teams ht ON m.home_team_id = ht.team_id
-                LEFT JOIN Teams at ON m.away_team_id = at.team_id
-                WHERE p.user_id = :user_id
-                ORDER BY m.match_datetime DESC
-            ''')
-            result = db.session.execute(query, {'user_id': user_id})
-            
-            predictions = []
-            for row in result:
-                pred_dict = dict(row._mapping)
-                for field in ['created_at', 'updated_at', 'match_datetime']:
-                    if pred_dict.get(field):
-                        if isinstance(pred_dict[field], str):
-                            try:
-                                pred_dict[field] = datetime.strptime(pred_dict[field], '%Y-%m-%d %H:%M:%S').isoformat()
-                            except:
-                                pred_dict[field] = None
-                        elif hasattr(pred_dict[field], 'isoformat'):
-                            pred_dict[field] = pred_dict[field].isoformat()
-                predictions.append(pred_dict)
-            
-            return predictions
-        except Exception as e:
-            print(f"ERROR in get_predictions_by_user: {str(e)}")
-            return []
-    
-    @staticmethod
-    def get_predictions_by_match(match_id):
-        try:
-            query = text('''
-                SELECT p.*, u.username, u.avatar_url
-                FROM Predictions p
-                LEFT JOIN Users u ON p.user_id = u.user_id
-                WHERE p.match_id = :match_id
-                ORDER BY p.created_at DESC
-            ''')
-            result = db.session.execute(query, {'match_id': match_id})
-            
-            predictions = []
-            for row in result:
-                pred_dict = dict(row._mapping)
-                for field in ['created_at', 'updated_at']:
-                    if pred_dict.get(field):
-                        if isinstance(pred_dict[field], str):
-                            try:
-                                pred_dict[field] = datetime.strptime(pred_dict[field], '%Y-%m-%d %H:%M:%S').isoformat()
-                            except:
-                                pred_dict[field] = None
-                        elif hasattr(pred_dict[field], 'isoformat'):
-                            pred_dict[field] = pred_dict[field].isoformat()
-                predictions.append(pred_dict)
-            
-            return predictions
-        except Exception as e:
-            print(f"ERROR in get_predictions_by_match: {str(e)}")
-            return []
-    
-    @staticmethod
-    def calculate_prediction_points(match_id):
+    def calculate_points_and_update(prediction):
         """
-        Tính điểm cho các dự đoán của một trận đấu.
-        Chỉ nên gọi khi trận đấu đã kết thúc (status = 'FINISHED').
-        Logic điểm:
-        - Đúng tỉ số: 20 điểm
-        - Đúng kết quả (1x2): 10 điểm
+        Tính điểm và cập nhật dự đoán sau khi trận kết thúc
         """
         try:
-            # Lấy thông tin trận đấu
-            match_query = text('''
-                SELECT home_score, away_score, status 
-                FROM Matches 
-                WHERE match_id = :match_id
-            ''')
-            match_result = db.session.execute(match_query, {'match_id': match_id}).fetchone()
+            match = prediction.match
             
-            if not match_result:
-                return False, "Match not found"
+            if match.status != 'Kết thúc':
+                return 0, "Match not finished yet"
             
-            home_score, away_score, status = match_result
+            # Tính điểm
+            points = 0
             
-            if status != 'FINISHED':
-                return False, "Match is not finished"
-            
-            # Xác định kết quả thực tế
-            if home_score > away_score:
+            # Điểm cho dự đoán kết quả (thắng/thua/hòa)
+            actual_result = None
+            if match.home_score > match.away_score:
                 actual_result = 'HOME_WIN'
-            elif home_score < away_score:
+            elif match.home_score < match.away_score:
                 actual_result = 'AWAY_WIN'
             else:
                 actual_result = 'DRAW'
             
-            # Lấy tất cả dự đoán cho trận này
-            predictions = PredictionService.get_predictions_by_match(match_id)
+            if prediction.predicted_result == actual_result:
+                points += 3  # Điểm cho dự đoán đúng kết quả
             
-            for pred in predictions:
-                prediction_id = pred['prediction_id']
-                user_id = pred['user_id']
-                predicted_home = pred['predicted_home_score']
-                predicted_away = pred['predicted_away_score']
-                predicted_result = pred['predicted_result']
-                
-                points = 0
-                pred_status = 'INCORRECT'
-                
-                # Tính điểm
-                if predicted_home == home_score and predicted_away == away_score:
-                    points = 20
-                    pred_status = 'CORRECT'
-                elif predicted_result == actual_result:
-                    points = 10
-                    pred_status = 'CORRECT'
-                
-                # Cập nhật bảng Predictions
-                update_pred_query = text('''
-                    UPDATE Predictions 
-                    SET points_awarded = :points, 
-                        status = :status,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE prediction_id = :prediction_id
-                ''')
-                db.session.execute(update_pred_query, {
-                    'points': points,
-                    'status': pred_status,
-                    'prediction_id': prediction_id
-                })
-                
-                # Cập nhật điểm cho user nếu có điểm
-                if points > 0:
-                    from services.user_service import UserService
-                    UserService.update_user_points(user_id, points, is_correct=True)
+            # Điểm cho dự đoán tỉ số chính xác
+            if (prediction.predicted_home_score == match.home_score and 
+                prediction.predicted_away_score == match.away_score):
+                points += 5  # Bonus cho dự đoán đúng tỉ số
             
-            # Đánh dấu các prediction đã xử lý
-            mark_processed_query = text('''
-                UPDATE Predictions 
-                SET status = 'PROCESSED'
-                WHERE match_id = :match_id AND status = 'PENDING'
-            ''')
-            db.session.execute(mark_processed_query, {'match_id': match_id})
+            # Điểm cho dự đoán gần đúng (sai lệch 1 bàn)
+            elif (abs(prediction.predicted_home_score - match.home_score) <= 1 and 
+                  abs(prediction.predicted_away_score - match.away_score) <= 1):
+                points += 2  # Bonus cho dự đoán gần đúng
+            
+            # Cập nhật điểm và trạng thái
+            prediction.points_awarded = points
+            prediction.status = 'CORRECT' if points > 0 else 'INCORRECT'
+            
+            # Cập nhật thống kê người dùng
+            user = User.query.get(prediction.user_id)
+            user.points += points
+            user.total_predictions += 1
+            if points > 0:
+                user.correct_predictions += 1
             
             db.session.commit()
-            return True, "Points calculated successfully"
+            
+            return points, None
+            
         except Exception as e:
-            print(f"ERROR in calculate_prediction_points: {str(e)}")
             db.session.rollback()
-            return False, str(e)
-    
-    @staticmethod
-    def get_upcoming_matches_for_prediction(user_id, days_ahead=7):
-        """Lấy danh sách trận đấu sắp diễn ra mà user có thể dự đoán"""
-        try:
-            query = text('''
-                SELECT m.*, 
-                       ht.name as home_team_name,
-                       at.name as away_team_name,
-                       s.name as season_name,
-                       CASE WHEN p.prediction_id IS NOT NULL THEN 1 ELSE 0 END as has_predicted
-                FROM Matches m
-                LEFT JOIN Teams ht ON m.home_team_id = ht.team_id
-                LEFT JOIN Teams at ON m.away_team_id = at.team_id
-                LEFT JOIN Seasons s ON m.season_id = s.season_id
-                LEFT JOIN Predictions p ON m.match_id = p.match_id AND p.user_id = :user_id
-                WHERE m.status = 'SCHEDULED'
-                AND m.match_datetime >= datetime('now')
-                AND m.match_datetime <= datetime('now', '+' || :days || ' days')
-                ORDER BY m.match_datetime ASC
-            ''')
-            
-            result = db.session.execute(query, {'user_id': user_id, 'days': days_ahead})
-            
-            matches = []
-            for row in result:
-                match_dict = dict(row._mapping)
-                
-                # Xử lý datetime
-                if match_dict.get('match_datetime'):
-                    if isinstance(match_dict['match_datetime'], str):
-                        try:
-                            match_dict['match_datetime'] = datetime.strptime(
-                                match_dict['match_datetime'], '%Y-%m-%d %H:%M:%S'
-                            ).isoformat()
-                        except:
-                            match_dict['match_datetime'] = None
-                    elif hasattr(match_dict['match_datetime'], 'isoformat'):
-                        match_dict['match_datetime'] = match_dict['match_datetime'].isoformat()
-                
-                matches.append(match_dict)
-            
-            return matches
-        except Exception as e:
-            print(f"ERROR in get_upcoming_matches_for_prediction: {str(e)}")
-            return []
+            return 0, str(e)

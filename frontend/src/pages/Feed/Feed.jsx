@@ -157,7 +157,7 @@ const PostItem = ({ post, currentUser, onDelete, onLike }) => {
                 <Avatar user={cmt.user} className="w-8 h-8" />
                 <div className="bg-white p-2 rounded-lg border text-sm flex-1">
                   <span className="font-bold block text-xs text-gray-700">
-                    {cmt.user?.username}
+                    {cmt.user?.full_name}
                   </span>
                   <span>{cmt.content}</span>
                 </div>

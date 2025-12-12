@@ -15,6 +15,7 @@ import Teams from "./pages/Team/Team";
 import Players from "./pages/Players/Players";
 import Profile from "./pages/Profile/Profile";
 import Feed from "./pages/Feed/Feed";
+import Predictions from "./pages/Predictions/Predictions";
 
 function App() {
   return (
@@ -28,6 +29,7 @@ function App() {
         <Route path="/players" element={<Players />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/feed" element={<Feed />} />
+        <Route path="/predictions" element={<Predictions />} />
       </Routes>
       <Footer />
     </div>

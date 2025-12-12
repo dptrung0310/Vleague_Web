@@ -51,7 +51,10 @@ const Navbar = () => {
           >
             Cầu thủ
           </Link>
-          <Link to="/" className="text-gray-700 hover:text-blue-600 transition">
+          <Link
+            to="/predictions"
+            className="text-gray-700 hover:text-blue-600 transition"
+          >
             Dự đoán
           </Link>
           <Link

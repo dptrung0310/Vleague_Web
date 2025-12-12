@@ -1,0 +1,46 @@
+.match-card {
+  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.match-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+}
+
+.team-logo {
+  width: 60px;
+  height: 60px;
+  object-fit: contain;
+}
+
+.prediction-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+.match-datetime {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #666;
+}
+
+.stadium-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.875rem;
+  color: #888;
+}
+
+.score-input {
+  width: 80px;
+  text-align: center;
+}
+
+.score-input input {
+  text-align: center;
+  font-weight: bold;
+  font-size: 1.2rem;
+}

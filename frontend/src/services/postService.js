@@ -61,13 +61,6 @@ const postService = {
       }
     );
   },
-
-  // 6. Chi tiết bài viết
-  getPostDetail: (postId) => {
-    return axiosClient.get(`/posts/${postId}`, {
-      headers: authHeader(), // Có thể cần auth để biết user đã like chưa
-    });
-  },
 };
 
 export default postService;

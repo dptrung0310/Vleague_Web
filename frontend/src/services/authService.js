@@ -17,7 +17,6 @@ const authService = {
     return axiosClient.post("/auth/google-login", { credential });
   },
 
-  // Lấy thông tin User hiện tại (nếu cần reload lại trang)
   getMe: () => {
     return axiosClient.get("/auth/me");
   },
