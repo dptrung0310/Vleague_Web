@@ -47,14 +47,15 @@ def create_prediction():
         current_user_id = get_jwt_identity()
         data = request.json
         
-        # Validate required fields
-        required_fields = ['match_id', 'predicted_result']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({
-                    'status': 'error',
-                    'message': f'Missing required field: {field}'
-                }), 400
+        if 'match_id' not in data:
+            return jsonify({'status': 'error', 'message': 'Missing match_id'}), 400
+            
+        has_result = 'predicted_result' in data
+        has_score = 'predicted_home_score' in data and 'predicted_away_score' in data
+        has_cards = 'predicted_card_over_under' in data # NEW
+        
+        if not (has_result or has_score or has_cards):
+             return jsonify({'status': 'error', 'message': 'Missing prediction data'}), 400
         
         prediction, error = PredictionService.create_prediction(
             user_id=current_user_id,

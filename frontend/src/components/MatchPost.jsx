@@ -94,7 +94,7 @@ const MatchPost = ({ match, onClick }) => {
         <div className="grid grid-cols-3 items-center">
           {/* Đội nhà */}
           <div className="flex flex-col items-center text-center">
-            {renderLogo(match.home_team?.logo, match.home_team?.name)}
+            {renderLogo(match.home_team?.logo_url, match.home_team?.name)}
             <div className="mt-4">
               <h4 className="font-bold text-gray-900 text-base md:text-lg leading-tight line-clamp-2">
                 {match.home_team?.name || `Đội ${match.home_team_id}`}
@@ -129,7 +129,7 @@ const MatchPost = ({ match, onClick }) => {
 
           {/* Đội khách */}
           <div className="flex flex-col items-center text-center">
-            {renderLogo(match.away_team?.logo, match.away_team?.name)}
+            {renderLogo(match.away_team?.logo_url, match.away_team?.name)}
             <div className="mt-4">
               <h4 className="font-bold text-gray-900 text-base md:text-lg leading-tight line-clamp-2">
                 {match.away_team?.name || `Đội ${match.away_team_id}`}

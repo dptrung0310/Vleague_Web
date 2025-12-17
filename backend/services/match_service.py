@@ -205,3 +205,70 @@ class MatchService:
             traceback.print_exc()
             return None
         
+    @staticmethod
+    def update_match_statuses():
+        """
+        Tự động cập nhật trạng thái 'Chưa đá' -> 'Đang diễn ra'
+        """
+        try:
+            # SỬA LẠI: Dùng now() thay vì utcnow() để khớp với giờ máy tính của bạn
+            now = datetime.now() 
+            
+            # Debug để bạn kiểm tra giờ server đang hiểu là mấy giờ
+            print(f"🕒 SERVER TIME CHECK: {now}")
+            
+            # Tìm các trận 'Chưa đá' mà thời gian <= hiện tại
+            matches_to_start = Match.query.filter(
+                Match.status == 'Chưa đá',
+                Match.match_datetime <= now
+            ).all()
+            
+            if matches_to_start:
+                print(f"🔄 SYSTEM: Phát hiện {len(matches_to_start)} trận cần cập nhật!")
+                for match in matches_to_start:
+                    print(f"   -> Cập nhật trận: {match.home_team_id} vs {match.away_team_id} (Giờ đá: {match.match_datetime})")
+                    match.status = 'Đang diễn ra'
+                    
+                    # Set tỉ số mặc định 0-0 nếu chưa có
+                    if match.home_score is None: match.home_score = 0
+                    if match.away_score is None: match.away_score = 0
+                
+                db.session.commit()
+                print("✅ Đã lưu vào Database thành công.")
+                return True
+            
+            return False
+        except Exception as e:
+            print(f"❌ LỖI UPDATE STATUS: {str(e)}")
+            db.session.rollback()
+            return False
+        """
+        Kiểm tra và cập nhật trạng thái các trận đấu đã đến giờ
+        """
+        try:
+            # Lấy thời gian hiện tại
+            # Lưu ý: Đảm bảo server và DB cùng múi giờ (UTC hoặc Local)
+            # Nếu DB lưu giờ VN thì dùng datetime.now()
+            now = datetime.now() 
+            
+            # Tìm các trận 'Chưa đá' mà thời gian đã qua -> Update thành 'Đang diễn ra'
+            matches_to_start = Match.query.filter(
+                Match.status == 'Chưa đá',
+                Match.match_datetime <= now
+            ).all()
+            
+            if matches_to_start:
+                print(f"🔄 SYSTEM: Tự động bắt đầu {len(matches_to_start)} trận đấu...")
+                for match in matches_to_start:
+                    match.status = 'Đang diễn ra'
+                    # Có thể set mặc định tỉ số 0-0 nếu muốn
+                    if match.home_score is None: match.home_score = 0
+                    if match.away_score is None: match.away_score = 0
+                    
+                db.session.commit()
+                return True
+            return False
+        except Exception as e:
+            print(f"❌ Error updating match statuses: {str(e)}")
+            db.session.rollback()
+            return False

@@ -28,6 +28,8 @@ import LocationOnIcon from "@mui/icons-material/LocationOn";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
+import LockIcon from "@mui/icons-material/Lock"; // Icon ổ khóa
+import FlagIcon from "@mui/icons-material/Flag"; // Icon thẻ phạt
 import { format } from "date-fns";
 import predictionService from "../../services/predictionService";
 import "./Predictions.css";
@@ -38,12 +40,16 @@ const Predictions = () => {
   const [error, setError] = useState(null);
   const [selectedMatch, setSelectedMatch] = useState(null);
   const [predictionDialogOpen, setPredictionDialogOpen] = useState(false);
+
+  // State quản lý loại dự đoán
   const [predictionType, setPredictionType] = useState("result");
   const [predictionData, setPredictionData] = useState({
     predicted_result: "HOME_WIN",
     predicted_home_score: 0,
     predicted_away_score: 0,
+    predicted_card_over_under: "OVER_3.5",
   });
+
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: "",
@@ -53,47 +59,27 @@ const Predictions = () => {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [matchToDelete, setMatchToDelete] = useState(null);
 
+  // --- 1. LẤY DANH SÁCH TRẬN ĐẤU ---
   const fetchUpcomingMatches = async () => {
     try {
       setLoading(true);
-      console.log("Fetching ALL upcoming matches...");
-
       const response = await predictionService.getUpcomingMatches();
-
-      console.log("Full API response:", response);
-      console.log("Response data:", response.data);
-
-      // Kiểm tra các cấu trúc có thể có
       let matchesData = [];
 
       if (response.data) {
-        // TH1: response.data.matches
         if (response.data.matches && Array.isArray(response.data.matches)) {
           matchesData = response.data.matches;
-          console.log("Found matches in response.data.matches");
-        }
-        // TH2: response.data.data.matches
-        else if (
-          response.data.data &&
-          response.data.data.matches &&
-          Array.isArray(response.data.data.matches)
-        ) {
+        } else if (response.data.data && response.data.data.matches) {
           matchesData = response.data.data.matches;
-          console.log("Found matches in response.data.data.matches");
         }
-        // TH3: response.matches (nếu axios interceptor trả về data)
-        else if (response.matches && Array.isArray(response.matches)) {
-          matchesData = response.matches;
-          console.log("Found matches in response.matches");
-        }
-
-        // Log để debug
-        console.log("Final matches data:", matchesData);
-        console.log("Number of matches:", matchesData.length);
 
         if (matchesData.length > 0) {
-          // Sắp xếp theo thời gian
+          // Sắp xếp: Ưu tiên "Đang diễn ra" lên đầu, sau đó đến thời gian
           const sortedMatches = [...matchesData].sort((a, b) => {
+            if (a.status === "Đang diễn ra" && b.status !== "Đang diễn ra")
+              return -1;
+            if (a.status !== "Đang diễn ra" && b.status === "Đang diễn ra")
+              return 1;
             const dateA = a.match_datetime
               ? new Date(a.match_datetime)
               : new Date(0);
@@ -104,27 +90,14 @@ const Predictions = () => {
           });
 
           setMatches(sortedMatches);
-          setError(null); // Clear error if successful
+          setError(null);
         } else {
           setMatches([]);
-          setError("No matches found in the response");
         }
-      } else {
-        setError("Invalid response format");
       }
     } catch (err) {
-      console.error("Error in fetchUpcomingMatches:", err);
-      console.error("Error details:", {
-        message: err.message,
-        response: err.response,
-        data: err.response?.data,
-      });
-
-      setError(
-        err.response?.data?.message ||
-          "Failed to fetch matches. Please try again."
-      );
-      setMatches([]);
+      console.error("Error fetching matches:", err);
+      setError("Không thể tải danh sách trận đấu.");
     } finally {
       setLoading(false);
     }
@@ -134,7 +107,18 @@ const Predictions = () => {
     fetchUpcomingMatches();
   }, []);
 
+  // --- 2. XỬ LÝ MỞ FORM DỰ ĐOÁN ---
   const handleOpenPredictionDialog = async (match) => {
+    // Nếu trận đấu đã bắt đầu (không phải 'Chưa đá'), chặn không cho mở form
+    if (match.status !== "Chưa đá") {
+      setSnackbar({
+        open: true,
+        message: "Trận đấu đã bắt đầu, không thể dự đoán!",
+        severity: "warning",
+      });
+      return;
+    }
+
     try {
       const checkResponse = await predictionService.checkUserPrediction(
         match.match_id
@@ -144,403 +128,247 @@ const Predictions = () => {
         const prediction =
           checkResponse.data?.prediction || checkResponse?.prediction;
 
-        // QUAN TRỌNG: Xác định loại dự đoán dựa trên tỉ số
-        // Nếu tỉ số là null => dự đoán kết quả
-        // Nếu tỉ số có giá trị => dự đoán tỉ số
-        const hasScorePrediction =
-          prediction.predicted_home_score !== null &&
-          prediction.predicted_away_score !== null;
+        // Tự động xác định loại dự đoán cũ để hiển thị đúng tab
+        let type = "result";
+        if (prediction.predicted_card_over_under) {
+          type = "cards";
+        } else if (prediction.predicted_home_score !== null) {
+          type = "score";
+        }
 
-        setPredictionType(hasScorePrediction ? "score" : "result");
-
-        // Set dữ liệu
+        setPredictionType(type);
         setPredictionData({
           predicted_result: prediction.predicted_result || "HOME_WIN",
           predicted_home_score: prediction.predicted_home_score || 0,
           predicted_away_score: prediction.predicted_away_score || 0,
+          predicted_card_over_under:
+            prediction.predicted_card_over_under || "OVER_3.5",
         });
       } else {
-        // Mặc định là dự đoán kết quả
+        // Mặc định nếu chưa dự đoán
         setPredictionType("result");
         setPredictionData({
           predicted_result: "HOME_WIN",
           predicted_home_score: 0,
           predicted_away_score: 0,
+          predicted_card_over_under: "OVER_3.5",
         });
       }
-
       setSelectedMatch(match);
       setPredictionDialogOpen(true);
     } catch (err) {
-      console.error("Error opening dialog:", err);
-      setSnackbar({
-        open: true,
-        message: "Không thể mở form dự đoán",
-        severity: "error",
-      });
+      console.error(err);
+      setSnackbar({ open: true, message: "Lỗi mở form", severity: "error" });
     }
   };
 
   const handleClosePredictionDialog = () => {
-    // Chỉ đóng dialog nếu không đang submit
     if (!submitting) {
       setPredictionDialogOpen(false);
-      // Đợi 100ms rồi reset để tránh conflict
-      setTimeout(() => {
-        setPredictionType("result");
-        setPredictionData({
-          predicted_result: "HOME_WIN",
-          predicted_home_score: 0,
-          predicted_away_score: 0,
-        });
-        setSelectedMatch(null);
-      }, 100);
+      setTimeout(() => setSelectedMatch(null), 100);
     }
   };
 
-  useEffect(() => {
-    // Reset submitting khi dialog đóng
-    if (!predictionDialogOpen) {
-      setSubmitting(false);
-    }
-  }, [predictionDialogOpen]);
-
-  // Thêm debug useEffect
-  useEffect(() => {
-    console.log("🔍 Matches state updated:", matches.length, "matches");
-    console.log("🔍 First match:", matches[0]);
-  }, [matches]);
-
-  useEffect(() => {
-    console.log("🔍 Selected match:", selectedMatch);
-  }, [selectedMatch]);
-
-  const validatePredictionData = () => {
-    if (predictionType === "score") {
-      // Kiểm tra tỉ số hợp lệ
-      const homeScore = predictionData.predicted_home_score;
-      const awayScore = predictionData.predicted_away_score;
-
-      if (homeScore < 0 || homeScore > 20 || awayScore < 0 || awayScore > 20) {
-        return "Tỉ số phải từ 0 đến 20";
-      }
-
-      // Kiểm tra nếu là số âm
-      if (homeScore < 0 || awayScore < 0) {
-        return "Tỉ số không được âm";
-      }
-    }
-    return null;
+  // --- 3. XỬ LÝ INPUT ---
+  const handlePredictionTypeChange = (event) =>
+    setPredictionType(event.target.value);
+  const handleResultChange = (event) =>
+    setPredictionData({
+      ...predictionData,
+      predicted_result: event.target.value,
+    });
+  const handleCardChange = (event) =>
+    setPredictionData({
+      ...predictionData,
+      predicted_card_over_under: event.target.value,
+    });
+  const handleScoreChange = (field) => (event) => {
+    const value = parseInt(event.target.value) || 0;
+    if (value >= 0 && value <= 20)
+      setPredictionData({ ...predictionData, [field]: value });
   };
 
+  // --- 4. GỬI DỰ ĐOÁN (SUBMIT) ---
   const handlePredictionSubmit = async () => {
+    if (!selectedMatch || submitting) return;
+    setSubmitting(true);
+
+    const dataToSend = {
+      match_id: selectedMatch.match_id,
+      predicted_result:
+        predictionType === "result" ? predictionData.predicted_result : null,
+      predicted_home_score:
+        predictionType === "score" ? predictionData.predicted_home_score : null,
+      predicted_away_score:
+        predictionType === "score" ? predictionData.predicted_away_score : null,
+      predicted_card_over_under:
+        predictionType === "cards"
+          ? predictionData.predicted_card_over_under
+          : null,
+    };
+
     try {
-      if (!selectedMatch || submitting) return;
-      setSubmitting(true);
-
-      // Validate dữ liệu
-      const validationError = validatePredictionData();
-      if (validationError) {
-        setSnackbar({
-          open: true,
-          message: validationError,
-          severity: "error",
-        });
-        setSubmitting(false);
-        return;
-      }
-
-      // Chuẩn bị dữ liệu
-      const dataToSend = {
-        match_id: selectedMatch.match_id,
-        predicted_result: predictionData.predicted_result,
-      };
-
-      // QUAN TRỌNG: Chỉ gửi tỉ số khi chọn dự đoán tỉ số
-      if (predictionType === "score") {
-        dataToSend.predicted_home_score = predictionData.predicted_home_score;
-        dataToSend.predicted_away_score = predictionData.predicted_away_score;
-      } else {
-        // Khi chọn dự đoán kết quả, gửi tỉ số là null
-        dataToSend.predicted_home_score = null;
-        dataToSend.predicted_away_score = null;
-      }
-
-      console.log("📤 Submitting prediction:", {
-        type: predictionType,
-        data: dataToSend,
-      });
-
       let response;
-      let isUpdate = !!selectedMatch.prediction_id;
-
-      try {
-        if (isUpdate) {
-          console.log("🔄 Updating prediction:", selectedMatch.prediction_id);
-          response = await predictionService.updatePrediction(
-            selectedMatch.prediction_id,
-            dataToSend
-          );
-        } else {
-          console.log("🆕 Creating prediction");
-          response = await predictionService.createPrediction(dataToSend);
-        }
-
-        console.log("📥 API response:", response);
-
-        // Xử lý response
-        const responseData = response.data || response;
-
-        if (
-          responseData &&
-          (responseData.prediction_id || responseData.match_id)
-        ) {
-          console.log("✅ Prediction successful");
-
-          // Cập nhật state ngay lập tức - ĐƠN GIẢN HÓA
-          const updatedMatches = matches.map((match) => {
-            if (match.match_id === selectedMatch.match_id) {
-              // Sử dụng toàn bộ dữ liệu từ response
-              return {
-                ...match,
-                prediction_id:
-                  responseData.prediction_id || match.prediction_id,
-                predicted_result: responseData.predicted_result,
-                predicted_home_score: responseData.predicted_home_score,
-                predicted_away_score: responseData.predicted_away_score,
-              };
-            }
-            return match;
-          });
-
-          setMatches(updatedMatches);
-
-          setSnackbar({
-            open: true,
-            message: isUpdate
-              ? "✅ Cập nhật dự đoán thành công!"
-              : "✅ Dự đoán đã được gửi!",
-            severity: "success",
-          });
-
-          // Đóng dialog
-          handleClosePredictionDialog();
-        } else {
-          console.error("❌ API error:", responseData);
-          setSnackbar({
-            open: true,
-            message: responseData?.message || "Có lỗi xảy ra",
-            severity: "error",
-          });
-        }
-      } catch (apiError) {
-        console.error("❌ API Error:", apiError);
-        setSnackbar({
-          open: true,
-          message: apiError.response?.data?.message || "Có lỗi xảy ra",
-          severity: "error",
-        });
+      const isUpdate = !!selectedMatch.prediction_id;
+      if (isUpdate) {
+        response = await predictionService.updatePrediction(
+          selectedMatch.prediction_id,
+          dataToSend
+        );
+      } else {
+        response = await predictionService.createPrediction(dataToSend);
       }
-    } catch (err) {
-      console.error("❌ Unexpected error:", err);
-      setSnackbar({
-        open: true,
-        message: "Lỗi không xác định",
-        severity: "error",
-      });
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
-  // Xử lý xóa dự đoán
-  const handleDeleteClick = (match) => {
-    setMatchToDelete(match);
-    setDeleteConfirmOpen(true);
-  };
+      const responseData = response.data || response;
 
-  const handleDeleteConfirm = async () => {
-    if (!matchToDelete || !matchToDelete.prediction_id) {
-      console.error("❌ No prediction_id found in match:", matchToDelete);
-      return;
-    }
-
-    try {
-      console.log("🗑️ Deleting prediction:", {
-        prediction_id: matchToDelete.prediction_id,
-        match_id: matchToDelete.match_id,
-        match_name: `${matchToDelete.home_team_name} vs ${matchToDelete.away_team_name}`,
-        current_time: new Date().toISOString(),
-        match_time: matchToDelete.match_datetime,
-      });
-
-      await predictionService.deletePrediction(matchToDelete.prediction_id);
-
-      // Cập nhật state - xóa thông tin dự đoán
+      // Cập nhật lại UI ngay lập tức mà không cần reload
       const updatedMatches = matches.map((match) => {
-        if (match.match_id === matchToDelete.match_id) {
+        if (match.match_id === selectedMatch.match_id) {
           return {
             ...match,
-            prediction_id: null,
-            predicted_result: null,
-            predicted_home_score: null,
-            predicted_away_score: null,
+            prediction_id:
+              responseData.prediction_id ||
+              responseData.data?.prediction_id ||
+              match.prediction_id,
+            predicted_result: dataToSend.predicted_result,
+            predicted_home_score: dataToSend.predicted_home_score,
+            predicted_away_score: dataToSend.predicted_away_score,
+            predicted_card_over_under: dataToSend.predicted_card_over_under,
           };
         }
         return match;
       });
 
       setMatches(updatedMatches);
-
       setSnackbar({
         open: true,
-        message: "✅ Đã xóa dự đoán thành công!",
+        message: isUpdate ? "Cập nhật thành công!" : "Dự đoán thành công!",
+        severity: "success",
+      });
+      handleClosePredictionDialog();
+    } catch (err) {
+      setSnackbar({
+        open: true,
+        message: err.response?.data?.message || "Có lỗi xảy ra",
+        severity: "error",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // --- 5. XÓA DỰ ĐOÁN ---
+  const handleDeleteClick = (match) => {
+    setMatchToDelete(match);
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!matchToDelete?.prediction_id) return;
+    try {
+      await predictionService.deletePrediction(matchToDelete.prediction_id);
+
+      const updatedMatches = matches.map((m) => {
+        if (m.match_id === matchToDelete.match_id) {
+          return {
+            ...m,
+            prediction_id: null,
+            predicted_result: null,
+            predicted_home_score: null,
+            predicted_away_score: null,
+            predicted_card_over_under: null,
+          };
+        }
+        return m;
+      });
+      setMatches(updatedMatches);
+      setSnackbar({
+        open: true,
+        message: "Đã xóa dự đoán",
         severity: "success",
       });
     } catch (err) {
-      console.error("❌ Error deleting prediction:", err);
-      console.error("❌ Error response data:", err.response?.data);
-      console.error("❌ Error status:", err.response?.status);
-
-      setSnackbar({
-        open: true,
-        message: err.response?.data?.message || "❌ Không thể xóa dự đoán",
-        severity: "error",
-      });
+      setSnackbar({ open: true, message: "Lỗi khi xóa", severity: "error" });
     } finally {
       setDeleteConfirmOpen(false);
       setMatchToDelete(null);
     }
   };
 
-  const handleDeleteCancel = () => {
-    setDeleteConfirmOpen(false);
-    setMatchToDelete(null);
-  };
-
-  const handlePredictionTypeChange = (event) => {
-    setPredictionType(event.target.value);
-  };
-
-  const handleResultChange = (event) => {
-    setPredictionData({
-      ...predictionData,
-      predicted_result: event.target.value,
-    });
-  };
-
-  const handleScoreChange = (field) => (event) => {
-    const value = parseInt(event.target.value) || 0;
-    if (value >= 0 && value <= 20) {
-      setPredictionData({
-        ...predictionData,
-        [field]: value,
-      });
+  // Helper render trạng thái trận đấu
+  const renderMatchStatus = (match) => {
+    if (match.status === "Đang diễn ra") {
+      return (
+        <Chip
+          label="LIVE"
+          color="error"
+          size="small"
+          sx={{
+            fontWeight: "bold",
+            animation: "pulse 1.5s infinite",
+            "@keyframes pulse": {
+              "0%": { opacity: 1 },
+              "50%": { opacity: 0.5 },
+              "100%": { opacity: 1 },
+            },
+          }}
+        />
+      );
     }
-  };
-
-  const getResultLabel = (result) => {
-    switch (result) {
-      case "HOME_WIN":
-        return `${selectedMatch?.home_team_name} Thắng`;
-      case "AWAY_WIN":
-        return `${selectedMatch?.away_team_name} Thắng`;
-      case "DRAW":
-        return "Hòa";
-      default:
-        return "Chưa chọn";
-    }
-  };
-
-  if (loading) {
     return (
-      <Container
-        sx={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          minHeight: "50vh",
-        }}
-      >
-        <Box sx={{ textAlign: "center" }}>
-          <CircularProgress size={60} />
-          <Typography variant="body1" sx={{ mt: 2 }}>
-            Đang tải trận đấu...
-          </Typography>
-        </Box>
+      <Chip
+        icon={<EventIcon />}
+        label={
+          match.match_datetime
+            ? format(new Date(match.match_datetime), "dd/MM HH:mm")
+            : "Chưa xếp lịch"
+        }
+        size="small"
+        color="primary"
+        variant="outlined"
+      />
+    );
+  };
+
+  if (loading)
+    return (
+      <Container sx={{ mt: 5, textAlign: "center" }}>
+        <CircularProgress />
       </Container>
     );
-  }
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-      <Typography
-        variant="h4"
-        component="h1"
-        gutterBottom
-        sx={{ fontWeight: "bold" }}
-      >
-        <EmojiEventsIcon sx={{ mr: 1, verticalAlign: "middle" }} />
+      <Typography variant="h4" gutterBottom sx={{ fontWeight: "bold" }}>
+        <EmojiEventsIcon sx={{ mr: 1, verticalAlign: "bottom" }} />
         Dự Đoán Trận Đấu
       </Typography>
 
-      {error && (
-        <Alert
-          severity="error"
-          sx={{ mb: 2 }}
-          action={
-            <Button color="inherit" size="small" onClick={fetchUpcomingMatches}>
-              Thử lại
-            </Button>
-          }
-        >
-          {error}
-        </Alert>
-      )}
-
-      <Typography variant="body1" color="text.secondary" paragraph>
-        Dự đoán kết quả các trận đấu sắp diễn ra và kiếm điểm cho những dự đoán
-        chính xác!
-        {matches.length > 0 && ` Có ${matches.length} trận đấu sắp diễn ra.`}
-      </Typography>
+      {error && <Alert severity="error">{error}</Alert>}
 
       {matches.length === 0 && !error ? (
         <Alert severity="info" sx={{ mt: 2 }}>
-          Hiện không có trận đấu nào sắp diễn ra để dự đoán.
-          <br />
-          <Typography variant="caption">
-            Điều này có thể do:
-            <ul style={{ margin: 0, paddingLeft: "20px" }}>
-              <li>Tất cả trận đấu đã kết thúc</li>
-              <li>Chưa có trận đấu nào trong mùa giải hiện tại</li>
-              <li>Có lỗi khi tải dữ liệu</li>
-            </ul>
-          </Typography>
+          Hiện không có trận đấu nào sắp diễn ra.
         </Alert>
       ) : (
-        <>
-          {matches.length > 0 && (
-            <Typography variant="subtitle1" color="primary" sx={{ mb: 2 }}>
-              📋 Đang hiển thị {matches.length} trận đấu sắp diễn ra
-            </Typography>
-          )}
+        <Grid container spacing={3}>
+          {matches.map((match) => {
+            const isLive = match.status === "Đang diễn ra";
+            const isPending = match.status === "Chưa đá"; // Chỉ khi chưa đá mới được sửa/xóa
 
-          <Grid container spacing={3}>
-            {matches.map((match) => (
-              <Grid item xs={12} sm={6} md={4} key={match.match_id || match.id}>
+            return (
+              <Grid item xs={12} sm={6} md={4} key={match.match_id}>
                 <Card
                   sx={{
                     height: "100%",
                     display: "flex",
                     flexDirection: "column",
-                    transition: "transform 0.2s",
-                    "&:hover": {
-                      transform: "translateY(-4px)",
-                      boxShadow: 6,
-                    },
+                    boxShadow: 3,
+                    position: "relative",
                   }}
                 >
                   <CardContent sx={{ flexGrow: 1 }}>
+                    {/* Header: Status & Badge */}
                     <Box
                       sx={{
                         display: "flex",
@@ -548,40 +376,21 @@ const Predictions = () => {
                         mb: 2,
                       }}
                     >
-                      <Chip
-                        icon={<EventIcon />}
-                        label={
-                          match.match_datetime
-                            ? format(
-                                new Date(match.match_datetime),
-                                "dd/MM • HH:mm"
-                              )
-                            : "Chưa xác định"
-                        }
-                        size="small"
-                        color="primary"
-                        variant="outlined"
-                      />
+                      {renderMatchStatus(match)}
                       {match.prediction_id && (
                         <Chip label="Đã dự đoán" color="success" size="small" />
                       )}
                     </Box>
 
-                    <Box sx={{ textAlign: "center", mb: 3 }}>
-                      <Typography variant="h6" gutterBottom>
-                        {match.round || "Trận đấu"}
-                      </Typography>
-                      <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        sx={{ mb: 1 }}
-                      >
+                    {/* Tên sân */}
+                    <Box sx={{ textAlign: "center", mb: 2 }}>
+                      <Typography variant="caption" color="text.secondary">
                         <LocationOnIcon sx={{ fontSize: 14, mr: 0.5 }} />
                         {match.stadium_name || "Sân vận động"}
                       </Typography>
                     </Box>
 
-                    {/* Teams Display */}
+                    {/* Logo & LIVE/VS */}
                     <Box
                       sx={{
                         display: "flex",
@@ -592,245 +401,275 @@ const Predictions = () => {
                     >
                       {/* Đội nhà */}
                       <Box sx={{ textAlign: "center", flex: 1 }}>
-                        {match.home_team_logo ? (
-                          <img
-                            src={match.home_team_logo}
-                            alt={match.home_team_name}
-                            style={{
-                              width: 60,
-                              height: 60,
-                              objectFit: "contain",
-                            }}
-                          />
-                        ) : (
-                          <SportsSoccerIcon
-                            sx={{ fontSize: 60, color: "primary.main" }}
-                          />
-                        )}
+                        <img
+                          src={
+                            match.home_team_logo ||
+                            "https://via.placeholder.com/60"
+                          }
+                          alt="Home"
+                          style={{
+                            width: 60,
+                            height: 60,
+                            objectFit: "contain",
+                          }}
+                        />
                         <Typography
-                          variant="subtitle1"
+                          variant="subtitle2"
                           sx={{ mt: 1, fontWeight: "bold" }}
                         >
-                          {match.home_team_name || "Đội nhà"}
+                          {match.home_team_name}
                         </Typography>
                       </Box>
 
-                      <Box sx={{ mx: 2, textAlign: "center" }}>
-                        <Typography
-                          variant="h5"
-                          sx={{ fontWeight: "bold", color: "text.secondary" }}
-                        >
-                          VS
-                        </Typography>
-                        <Typography
-                          variant="caption"
-                          display="block"
-                          color="text.secondary"
-                        >
-                          {match.match_datetime
-                            ? format(new Date(match.match_datetime), "HH:mm")
-                            : ""}
-                        </Typography>
+                      {/* Ở GIỮA: LIVE (nhấp nháy) hoặc VS */}
+                      <Box sx={{ mx: 1, textAlign: "center" }}>
+                        {isLive ? (
+                          <Typography
+                            variant="h4"
+                            color="error"
+                            fontWeight="900"
+                            sx={{
+                              animation: "blink 1s linear infinite",
+                              "@keyframes blink": {
+                                "0%": { opacity: 1 },
+                                "50%": { opacity: 0.2 },
+                                "100%": { opacity: 1 },
+                              },
+                            }}
+                          >
+                            LIVE
+                          </Typography>
+                        ) : (
+                          <>
+                            <Typography
+                              variant="h5"
+                              sx={{
+                                fontWeight: "bold",
+                                color: "text.secondary",
+                              }}
+                            >
+                              VS
+                            </Typography>
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                            >
+                              {match.match_datetime
+                                ? format(
+                                    new Date(match.match_datetime),
+                                    "HH:mm"
+                                  )
+                                : ""}
+                            </Typography>
+                          </>
+                        )}
                       </Box>
 
                       {/* Đội khách */}
                       <Box sx={{ textAlign: "center", flex: 1 }}>
-                        {match.away_team_logo ? (
-                          <img
-                            src={match.away_team_logo}
-                            alt={match.away_team_name}
-                            style={{
-                              width: 60,
-                              height: 60,
-                              objectFit: "contain",
-                            }}
-                          />
-                        ) : (
-                          <SportsSoccerIcon
-                            sx={{ fontSize: 60, color: "secondary.main" }}
-                          />
-                        )}
+                        <img
+                          src={
+                            match.away_team_logo ||
+                            "https://via.placeholder.com/60"
+                          }
+                          alt="Away"
+                          style={{
+                            width: 60,
+                            height: 60,
+                            objectFit: "contain",
+                          }}
+                        />
                         <Typography
-                          variant="subtitle1"
+                          variant="subtitle2"
                           sx={{ mt: 1, fontWeight: "bold" }}
                         >
-                          {match.away_team_name || "Đội khách"}
+                          {match.away_team_name}
                         </Typography>
                       </Box>
                     </Box>
 
-                    {/* Dự đoán của user (nếu có) */}
+                    {/* KHUNG HIỂN THỊ DỰ ĐOÁN (Luôn hiện nếu có prediction_id) */}
                     {match.prediction_id && (
                       <Box
                         sx={{
                           mt: 2,
-                          p: 2,
-                          bgcolor: "success.light",
+                          p: 1.5,
+                          bgcolor: "#e8f5e9",
                           borderRadius: 1,
-                          border: "1px solid",
-                          borderColor: "success.main",
+                          border: "1px solid #2e7d32",
                         }}
                       >
                         <Typography
-                          variant="body2"
+                          variant="caption"
                           sx={{
                             fontWeight: "bold",
-                            color: "success.dark",
-                            mb: 0.5,
+                            color: "#1b5e20",
+                            display: "flex",
+                            justifyContent: "space-between",
                           }}
                         >
-                          ⚽ Dự đoán của bạn
+                          <span>⚽ Dự đoán của bạn:</span>
+                          {/* Nếu trận đã bắt đầu, hiện chữ Đã chốt */}
+                          {!isPending && (
+                            <span
+                              style={{
+                                fontSize: "10px",
+                                color: "#d32f2f",
+                                fontWeight: "bold",
+                              }}
+                            >
+                              (Đã chốt)
+                            </span>
+                          )}
                         </Typography>
 
-                        {/* LOGIC HIỂN THỊ MỚI */}
-                        {match.predicted_home_score !== null &&
-                        match.predicted_away_score !== null ? (
-                          // Có tỉ số: Hiển thị tỉ số
-                          <Typography variant="body2" color="success.dark">
-                            Tỉ số: {match.predicted_home_score} -{" "}
-                            {match.predicted_away_score}
-                          </Typography>
-                        ) : (
-                          // Không có tỉ số (null): Hiển thị kết quả
-                          <Typography variant="body2" color="success.dark">
-                            {match.predicted_result === "HOME_WIN"
-                              ? `${match.home_team_name} Thắng`
-                              : match.predicted_result === "AWAY_WIN"
-                              ? `${match.away_team_name} Thắng`
-                              : "Hòa"}
-                          </Typography>
-                        )}
+                        <Typography
+                          variant="body2"
+                          color="#1b5e20"
+                          fontWeight="bold"
+                          sx={{ mt: 0.5 }}
+                        >
+                          {match.predicted_card_over_under ? (
+                            <span>
+                              <FlagIcon
+                                sx={{
+                                  fontSize: 16,
+                                  verticalAlign: "text-bottom",
+                                  mr: 0.5,
+                                }}
+                              />{" "}
+                              Thẻ phạt:{" "}
+                              {match.predicted_card_over_under === "OVER_3.5"
+                                ? "Tài (>3.5)"
+                                : "Xỉu (<3.5)"}
+                            </span>
+                          ) : match.predicted_home_score !== null ? (
+                            <span>
+                              Tỉ số: {match.predicted_home_score} -{" "}
+                              {match.predicted_away_score}
+                            </span>
+                          ) : (
+                            <span>
+                              Kết quả:{" "}
+                              {match.predicted_result === "HOME_WIN"
+                                ? `${match.home_team_name} Thắng`
+                                : match.predicted_result === "AWAY_WIN"
+                                ? `${match.away_team_name} Thắng`
+                                : "Hòa"}
+                            </span>
+                          )}
+                        </Typography>
                       </Box>
                     )}
                   </CardContent>
 
+                  {/* BUTTONS ACTIONS */}
                   <CardActions sx={{ p: 2, pt: 0 }}>
                     {match.prediction_id ? (
-                      // Khi đã có dự đoán: Hiển thị 2 nút Sửa và Xóa
-                      <Box sx={{ display: "flex", gap: 1, width: "100%" }}>
+                      // Nếu ĐÃ dự đoán
+                      isPending ? (
+                        // Nếu chưa đá -> Cho phép Sửa/Xóa
+                        <Box sx={{ display: "flex", gap: 1, width: "100%" }}>
+                          <Button
+                            variant="outlined"
+                            color="secondary"
+                            size="small"
+                            fullWidth
+                            onClick={() => handleOpenPredictionDialog(match)}
+                            startIcon={<EditIcon />}
+                          >
+                            Sửa
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            color="error"
+                            size="small"
+                            fullWidth
+                            onClick={() => handleDeleteClick(match)}
+                            startIcon={<DeleteIcon />}
+                          >
+                            Xóa
+                          </Button>
+                        </Box>
+                      ) : (
+                        // Nếu đang đá/xong -> Khóa nút
                         <Button
-                          variant="outlined"
-                          color="secondary"
-                          onClick={() => handleOpenPredictionDialog(match)}
-                          startIcon={<EditIcon />}
-                          sx={{ flex: 1 }}
+                          fullWidth
+                          variant="contained"
+                          disabled
+                          startIcon={<LockIcon />}
                         >
-                          Sửa dự đoán
+                          Đã chốt dự đoán
                         </Button>
-                        <Button
-                          variant="outlined"
-                          color="error"
-                          onClick={() => handleDeleteClick(match)}
-                          startIcon={<DeleteIcon />}
-                          sx={{ flex: 1 }}
-                        >
-                          Xóa dự đoán
-                        </Button>
-                      </Box>
+                      )
                     ) : (
-                      // Khi chưa có dự đoán: Hiển thị 1 nút lớn
+                      // Nếu CHƯA dự đoán
                       <Button
                         fullWidth
                         variant="contained"
-                        color="primary"
                         onClick={() => handleOpenPredictionDialog(match)}
                         startIcon={<EmojiEventsIcon />}
+                        disabled={!isPending} // Không cho dự đoán nếu trận đã live
                       >
-                        Dự đoán ngay
+                        {isPending ? "Dự đoán ngay" : "Đã đóng dự đoán"}
                       </Button>
                     )}
                   </CardActions>
                 </Card>
               </Grid>
-            ))}
-          </Grid>
-        </>
+            );
+          })}
+        </Grid>
       )}
 
-      {/* Dialog dự đoán */}
+      {/* DIALOG FORM */}
       <Dialog
         open={predictionDialogOpen}
         onClose={handleClosePredictionDialog}
         maxWidth="sm"
         fullWidth
-        disableEnforceFocus
       >
-        <DialogTitle>
-          {selectedMatch?.prediction_id ? "Sửa dự đoán" : "Dự đoán kết quả"}
-        </DialogTitle>
+        <DialogTitle>Dự đoán trận đấu</DialogTitle>
         <DialogContent>
           {selectedMatch && (
             <>
               <Box sx={{ textAlign: "center", mb: 3 }}>
-                <Typography variant="h6" gutterBottom>
+                <Typography variant="h6">
                   {selectedMatch.home_team_name} vs{" "}
                   {selectedMatch.away_team_name}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  {selectedMatch.match_datetime
-                    ? format(
-                        new Date(selectedMatch.match_datetime),
-                        "dd/MM/yyyy • HH:mm"
-                      )
-                    : "Chưa xác định"}
+                  Chọn loại dự đoán:
                 </Typography>
-                {selectedMatch.round && (
-                  <Typography
-                    variant="caption"
-                    display="block"
-                    color="text.secondary"
-                  >
-                    {selectedMatch.round}
-                  </Typography>
-                )}
               </Box>
 
-              {/* Thông báo loại dự đoán */}
-              <Alert
-                severity="info"
-                sx={{ mb: 2 }}
-                icon={
-                  predictionType === "score" ? (
-                    <EditIcon />
-                  ) : (
-                    <EmojiEventsIcon />
-                  )
-                }
-              >
-                <Typography variant="body2">
-                  {predictionType === "score"
-                    ? "Bạn đang dự đoán tỉ số. Chỉ hiển thị tỉ số trên thẻ."
-                    : 'Bạn đang dự đoán kết quả. Chỉ hiển thị "Thắng/Hòa/Thua" trên thẻ.'}
-                </Typography>
-              </Alert>
-
-              <FormControl component="fieldset" sx={{ mb: 3 }}>
-                <Typography variant="subtitle2" gutterBottom>
-                  Loại dự đoán
-                </Typography>
+              <FormControl component="fieldset" sx={{ mb: 3, width: "100%" }}>
                 <RadioGroup
                   row
                   value={predictionType}
                   onChange={handlePredictionTypeChange}
+                  sx={{ justifyContent: "center" }}
                 >
                   <FormControlLabel
                     value="result"
                     control={<Radio />}
-                    label="Thắng/Hòa/Thua"
+                    label="Kết quả"
                   />
                   <FormControlLabel
                     value="score"
                     control={<Radio />}
-                    label="Tỉ số chính xác"
+                    label="Tỉ số"
+                  />
+                  <FormControlLabel
+                    value="cards"
+                    control={<Radio />}
+                    label="Thẻ phạt"
                   />
                 </RadioGroup>
               </FormControl>
 
-              {predictionType === "result" ? (
-                <FormControl component="fieldset" sx={{ width: "100%" }}>
-                  <Typography variant="subtitle2" gutterBottom>
-                    Chọn kết quả
-                  </Typography>
+              <Box sx={{ p: 2, bgcolor: "grey.50", borderRadius: 2 }}>
+                {predictionType === "result" && (
                   <RadioGroup
                     value={predictionData.predicted_result}
                     onChange={handleResultChange}
@@ -851,134 +690,108 @@ const Predictions = () => {
                       label={`${selectedMatch.away_team_name} Thắng`}
                     />
                   </RadioGroup>
-                </FormControl>
-              ) : (
-                <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                  <Box sx={{ flex: 1, textAlign: "center" }}>
-                    <Typography variant="body2" gutterBottom>
-                      {selectedMatch.home_team_name}
-                    </Typography>
+                )}
+                {predictionType === "score" && (
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
                     <TextField
+                      label={selectedMatch.home_team_name}
                       type="number"
                       value={predictionData.predicted_home_score}
                       onChange={handleScoreChange("predicted_home_score")}
-                      inputProps={{ min: 0, max: 20 }}
-                      variant="outlined"
-                      size="small"
                       fullWidth
+                      inputProps={{ min: 0 }}
                     />
-                  </Box>
-
-                  <Typography variant="h5">-</Typography>
-
-                  <Box sx={{ flex: 1, textAlign: "center" }}>
-                    <Typography variant="body2" gutterBottom>
-                      {selectedMatch.away_team_name}
-                    </Typography>
+                    <Typography variant="h5">-</Typography>
                     <TextField
+                      label={selectedMatch.away_team_name}
                       type="number"
                       value={predictionData.predicted_away_score}
                       onChange={handleScoreChange("predicted_away_score")}
-                      inputProps={{ min: 0, max: 20 }}
-                      variant="outlined"
-                      size="small"
                       fullWidth
+                      inputProps={{ min: 0 }}
                     />
                   </Box>
-                </Box>
-              )}
-
-              <Box sx={{ mt: 3, p: 2, bgcolor: "info.light", borderRadius: 1 }}>
-                <Typography variant="caption">
-                  <strong>Lưu ý:</strong> Bạn có thể thay đổi dự đoán cho đến
-                  khi trận đấu bắt đầu. Điểm thưởng được tính như sau:
-                  <ul style={{ margin: 0, paddingLeft: 16 }}>
-                    <li>Dự đoán đúng kết quả: 3 điểm</li>
-                    <li>Dự đoán đúng tỉ số: 5 điểm (thêm)</li>
-                    <li>Sai lệch 1 bàn: 2 điểm (thêm)</li>
-                  </ul>
-                </Typography>
+                )}
+                {predictionType === "cards" && (
+                  <FormControl component="fieldset">
+                    <Typography variant="subtitle2" gutterBottom>
+                      Tổng thẻ phạt (Vàng + Đỏ):
+                    </Typography>
+                    <RadioGroup
+                      value={predictionData.predicted_card_over_under}
+                      onChange={handleCardChange}
+                    >
+                      <FormControlLabel
+                        value="OVER_3.5"
+                        control={<Radio />}
+                        label={
+                          <Box>
+                            <Typography fontWeight="bold">Tài 3.5</Typography>
+                            <Typography variant="caption">
+                              Trên 3 thẻ (4, 5...)
+                            </Typography>
+                          </Box>
+                        }
+                        sx={{ mb: 1 }}
+                      />
+                      <FormControlLabel
+                        value="UNDER_3.5"
+                        control={<Radio />}
+                        label={
+                          <Box>
+                            <Typography fontWeight="bold">Xỉu 3.5</Typography>
+                            <Typography variant="caption">
+                              Dưới 4 thẻ (0-3)
+                            </Typography>
+                          </Box>
+                        }
+                      />
+                    </RadioGroup>
+                  </FormControl>
+                )}
               </Box>
             </>
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleClosePredictionDialog} disabled={submitting}>
-            Hủy
-          </Button>
+          <Button onClick={handleClosePredictionDialog}>Hủy</Button>
           <Button
-            onClick={handlePredictionSubmit}
             variant="contained"
-            color="primary"
+            onClick={handlePredictionSubmit}
             disabled={submitting}
-            startIcon={submitting ? <CircularProgress size={20} /> : null}
           >
-            {submitting
-              ? "Đang xử lý..."
-              : selectedMatch?.prediction_id
-              ? "Cập nhật"
-              : "Gửi dự đoán"}
+            {submitting ? "Đang gửi..." : "Xác nhận"}
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Dialog xác nhận xóa */}
+      {/* CONFIRM DELETE */}
       <Dialog
         open={deleteConfirmOpen}
-        onClose={handleDeleteCancel}
-        maxWidth="xs"
-        fullWidth
+        onClose={() => setDeleteConfirmOpen(false)}
       >
-        <DialogTitle>Xác nhận xóa dự đoán</DialogTitle>
+        <DialogTitle>Xóa dự đoán?</DialogTitle>
         <DialogContent>
-          <Typography>
-            Bạn có chắc chắn muốn xóa dự đoán này không?
-            <br />
-            <strong>Hành động này không thể hoàn tác.</strong>
-          </Typography>
-          {matchToDelete && (
-            <Box sx={{ mt: 2, p: 2, bgcolor: "grey.100", borderRadius: 1 }}>
-              <Typography variant="body2">
-                <strong>Trận đấu:</strong> {matchToDelete.home_team_name} vs{" "}
-                {matchToDelete.away_team_name}
-                <br />
-                <strong>Thời gian:</strong>{" "}
-                {matchToDelete.match_datetime
-                  ? format(
-                      new Date(matchToDelete.match_datetime),
-                      "dd/MM/yyyy HH:mm"
-                    )
-                  : "Chưa xác định"}
-              </Typography>
-            </Box>
-          )}
+          Bạn có chắc muốn xóa dự đoán cho trận này không?
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleDeleteCancel}>Hủy</Button>
+          <Button onClick={() => setDeleteConfirmOpen(false)}>Hủy</Button>
           <Button
             onClick={handleDeleteConfirm}
-            variant="contained"
             color="error"
-            startIcon={<DeleteIcon />}
+            variant="contained"
           >
-            Xóa dự đoán
+            Xóa
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Snackbar thông báo */}
       <Snackbar
         open={snackbar.open}
-        autoHideDuration={6000}
+        autoHideDuration={4000}
         onClose={() => setSnackbar({ ...snackbar, open: false })}
       >
-        <Alert
-          onClose={() => setSnackbar({ ...snackbar, open: false })}
-          severity={snackbar.severity}
-          sx={{ width: "100%" }}
-        >
-          {snackbar.message}
-        </Alert>
+        <Alert severity={snackbar.severity}>{snackbar.message}</Alert>
       </Snackbar>
     </Container>
   );

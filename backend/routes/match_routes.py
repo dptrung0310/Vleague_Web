@@ -3,6 +3,7 @@ from services.match_service import MatchService
 from models.match import Match
 from extensions import db
 from sqlalchemy import desc
+from services.team_service import TeamService
 
 match_bp = Blueprint('matches', __name__)
 
@@ -26,6 +27,7 @@ def match_to_dict(match):
 @match_bp.route('/matches', methods=['GET'])
 def get_matches():
     try:
+        MatchService.update_match_statuses()
         # Lấy tham số phân trang từ query string
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 10, type=int)
@@ -96,13 +98,13 @@ def get_matches():
                 match_dict['home_team'] = {
                     'id': match.home_team.team_id,
                     'name': match.home_team.name,
-                    'logo': match.home_team.logo_url if hasattr(match.home_team, 'logo_url') else None
+                    'logo_url': TeamService._process_logo_url(match.home_team.logo_url)
                 }
             if match.away_team:
                 match_dict['away_team'] = {
                     'id': match.away_team.team_id,
                     'name': match.away_team.name,
-                    'logo': match.away_team.logo_url if hasattr(match.away_team, 'logo_url') else None
+                    'logo_url': TeamService._process_logo_url(match.away_team.logo_url)
                 }
             if match.stadium:
                 match_dict['stadium_name'] = match.stadium.name

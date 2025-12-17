@@ -1,12 +1,14 @@
 from datetime import datetime
+from services.team_service import TeamService 
 from models.prediction import Prediction
 from models.match import Match
 from models.user import User
 from extensions import db
-from sqlalchemy import desc, and_, or_
+from sqlalchemy import desc, and_, or_ 
 from models.team import Team  # Thêm import này
-from models.stadium import Stadium  # Thêm import này
+from models.stadium import Stadium  # Thêm import này 
 from models.season import Season  # Thêm import này
+from services.match_service import MatchService
 
 class PredictionService:
     @staticmethod
@@ -45,6 +47,7 @@ class PredictionService:
                 predicted_result=data.get('predicted_result'),
                 predicted_home_score=data.get('predicted_home_score'),
                 predicted_away_score=data.get('predicted_away_score'),
+                predicted_card_over_under=data.get('predicted_card_over_under'),
                 status='PENDING'
             )
             
@@ -93,6 +96,9 @@ class PredictionService:
             if 'predicted_away_score' in data:
                 prediction.predicted_away_score = data['predicted_away_score']
             
+            if 'predicted_card_over_under' in data:
+                prediction.predicted_card_over_under = data['predicted_card_over_under']
+
             prediction.updated_at = datetime.utcnow()
             db.session.commit()
             
@@ -203,6 +209,7 @@ class PredictionService:
         KHÔNG phân trang - load tất cả trận có status = 'Chưa đá' của mùa hiện tại
         """
         try:
+            MatchService.update_match_statuses()
             print(f"DEBUG: Getting ALL upcoming matches for user_id={user_id}")
             
             # 1. Lấy season_id lớn nhất (mùa hiện tại)
@@ -212,14 +219,28 @@ class PredictionService:
             
             current_season_id = current_season.season_id
             print(f"DEBUG: Current season_id = {current_season_id}")
+
+            now = datetime.utcnow()
+
+            matches_to_start = Match.query.filter(
+                Match.season_id == current_season_id,
+                Match.status.in_(['Chưa đá', 'Đang diễn ra']),
+                Match.match_datetime <= now
+            ).all()
             
-            # 2. Lấy TẤT CẢ trận có status là 'Chưa đá' trong mùa hiện tại
+            if matches_to_start:
+                print(f"DEBUG: Auto-starting {len(matches_to_start)} matches...")
+                for match in matches_to_start:
+                    match.status = 'Đang diễn ra'
+                db.session.commit()
+            
+            # 2. Lấy trận đấu: Bao gồm cả 'Chưa đá' VÀ 'Đang diễn ra'
             matches = Match.query.filter(
                 Match.season_id == current_season_id,
-                Match.status == 'Chưa đá'
+                Match.status.in_(['Chưa đá', 'Đang diễn ra'])
             ).order_by(Match.match_datetime.asc()).all()
             
-            print(f"DEBUG: Found {len(matches)} matches with status 'Chưa đá' in season {current_season_id}")
+            print(f"DEBUG: Found {len(matches)} matches with status 'Chưa đá' or 'Đang diễn ra' in season {current_season_id}")
             
             # 3. Chuẩn bị dữ liệu trả về
             matches_data = []
@@ -245,13 +266,15 @@ class PredictionService:
                 }
                 
                 # Thêm logo nếu có
+                # Xử lý logo cho đội nhà
                 if match.home_team and hasattr(match.home_team, 'logo_url'):
-                    match_dict['home_team_logo'] = match.home_team.logo_url
+                    match_dict['home_team_logo'] = TeamService._process_logo_url(match.home_team.logo_url)
                 else:
                     match_dict['home_team_logo'] = None
                     
+                # Xử lý logo cho đội khách
                 if match.away_team and hasattr(match.away_team, 'logo_url'):
-                    match_dict['away_team_logo'] = match.away_team.logo_url
+                    match_dict['away_team_logo'] = TeamService._process_logo_url(match.away_team.logo_url)
                 else:
                     match_dict['away_team_logo'] = None
                 
@@ -267,6 +290,7 @@ class PredictionService:
                         match_dict['predicted_result'] = prediction.predicted_result
                         match_dict['predicted_home_score'] = prediction.predicted_home_score
                         match_dict['predicted_away_score'] = prediction.predicted_away_score
+                        match_dict['predicted_card_over_under'] = prediction.predicted_card_over_under
                         match_dict['prediction_status'] = prediction.status
                 
                 matches_data.append(match_dict)

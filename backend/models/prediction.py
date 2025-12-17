@@ -15,6 +15,10 @@ class Prediction(db.Model):
     predicted_home_score = db.Column(db.Integer, nullable=True)  # Thêm nullable=True
     predicted_away_score = db.Column(db.Integer, nullable=True)  # Thêm nullable=True
     
+    # Giai đoạn 3: Dự đoán thẻ phạt (NEW)
+    # Giá trị: 'OVER_3.5' hoặc 'UNDER_3.5'
+    predicted_card_over_under = db.Column(db.String(20), nullable=True)
+    
     # Điểm thưởng
     points_awarded = db.Column(db.Integer, default=0)
     
@@ -40,6 +44,7 @@ class Prediction(db.Model):
             'predicted_result': self.predicted_result,
             'predicted_home_score': self.predicted_home_score,
             'predicted_away_score': self.predicted_away_score,
+            'predicted_card_over_under': self.predicted_card_over_under, 
             'points_awarded': self.points_awarded,
             'status': self.status,
             'created_at': self.created_at.isoformat() if self.created_at else None,

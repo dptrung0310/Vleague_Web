@@ -1,5 +1,6 @@
 from extensions import db
 from sqlalchemy import text
+from flask import request, current_app
 
 class TeamService:
     @staticmethod
@@ -35,14 +36,19 @@ class TeamService:
                             team_dict.pop(field, None)
                     
                     team_dict['home_stadium'] = stadium_info if stadium_info else None
+                    team_dict['logo_url'] = TeamService._process_logo_url(team_dict.get('logo_url'))
                     teams.append(team_dict)
                 
                 return teams
             else:
                 query = text('SELECT * FROM Teams ORDER BY name')
                 result = db.session.execute(query)
-                
-                return [dict(row._mapping) for row in result]
+                teams = []
+                for row in result:
+                    d = dict(row._mapping)
+                    d['logo_url'] = TeamService._process_logo_url(d.get('logo_url'))
+                    teams.append(d)
+                return teams
             
         except Exception as e:
             print(f"ERROR in get_all_teams: {str(e)}")
@@ -63,7 +69,7 @@ class TeamService:
                 
                 if result:
                     team_dict = dict(result._mapping)
-                    
+                    team_dict['logo_url'] = TeamService._process_logo_url(team_dict.get('logo_url'))
                     stadium_info = {}
                     if team_dict.get('home_stadium_id'):
                         stadium_info = {
@@ -83,13 +89,43 @@ class TeamService:
                 query = text('SELECT * FROM Teams WHERE team_id = :id')
                 result = db.session.execute(query, {'id': team_id}).fetchone()
                 
-                return dict(result._mapping) if result else None
+                if result:
+                    d = dict(result._mapping)
+                    # --- THÊM DÒNG NÀY ---
+                    d['logo_url'] = TeamService._process_logo_url(d.get('logo_url'))
+                    return d
+                return None
             
             return None
             
         except Exception as e:
             print(f"ERROR in get_team_by_id: {str(e)}")
             return None
+    
+    @staticmethod
+    def _process_logo_url(raw_path):
+        """Chuyển đổi đường dẫn logo thành URL đầy đủ"""
+        if not raw_path:
+            return None
+        
+        # Nếu đã là link online thì giữ nguyên
+        if raw_path.startswith(('http://', 'https://')):
+            return raw_path
+            
+        # Chuẩn hóa dấu gạch chéo ngược (\) thành xuôi (/)
+        clean_path = raw_path.replace('\\', '/')
+        
+        # Tìm vị trí bắt đầu của thư mục 'static'
+        if 'static/' in clean_path:
+            # Lấy phần đuôi từ 'static' trở đi
+            relative_path = clean_path.split('static/')[-1]
+            
+            # Tạo full URL dựa trên domain của server
+            # Ví dụ: http://localhost:5000 + /static/ + uploads/logos/CAHN.png
+            base_url = request.host_url.rstrip('/')  # Lấy http://localhost:5000
+            return f"{base_url}/static/{relative_path}"
+            
+        return raw_path
     
     @staticmethod
     def create_team(data):
@@ -189,7 +225,12 @@ class TeamService:
             
             result = db.session.execute(text(query), params)
             
-            return [dict(row._mapping) for row in result]
+            teams = []
+            for row in result:
+                d = dict(row._mapping)
+                d['logo_url'] = TeamService._process_logo_url(d.get('logo_url'))
+                teams.append(d)
+            return teams
             
         except Exception as e:
             print(f"ERROR in search_teams: {str(e)}")
@@ -250,7 +291,7 @@ class TeamService:
             teams = []
             for row in result:
                 team_dict = dict(row._mapping)
-                
+                team_dict['logo_url'] = TeamService._process_logo_url(team_dict.get('logo_url'))
                 # Xử lý stadium info
                 stadium_info = {}
                 if team_dict.get('home_stadium_id'):
